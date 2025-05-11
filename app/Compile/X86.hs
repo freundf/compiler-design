@@ -1,6 +1,6 @@
 module Compile.X86 where
 
-data X86 = X86 [Instr]
+type X86 = [Instr]
 
 data Instr
   = Prologue -- hopefully only temporary solution
@@ -41,8 +41,8 @@ freeStack =
   , Pop (Reg RBP)
   ]
 
-instance Show X86 where
-  show (X86 instr) = unlines . map (show) $ instr
+printX86 :: X86 -> String
+printX86 = unlines . map (show)
   
 instance Show Instr where
   show (Mov o1 o2)  = "mov " ++ show o1 ++ ", " ++ show o2

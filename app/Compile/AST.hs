@@ -5,6 +5,7 @@ module Compile.AST
   , Op(..)
   , showAsgnOp
   , posPretty
+  , opToX86
   ) where
 
 import Data.List (intercalate)
@@ -75,3 +76,12 @@ instance Show Op where
 showAsgnOp :: AsgnOp -> String
 showAsgnOp (Just op) = " " ++ show op ++ "= "
 showAsgnOp _ = " = "
+
+opToX86 :: Op -> String
+opToX86 Mul = "imul"
+opToX86 Add = "add"
+opToX86 Sub = "sub"
+opToX86 Div = "idiv"
+opToX86 Neg = "neg"
+opToX86 Mod = "idiv"
+opToX86 Nop = "nop"
