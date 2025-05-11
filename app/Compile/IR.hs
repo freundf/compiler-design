@@ -1,5 +1,12 @@
 module Compile.IR
   ( genIR
+  , Function
+  , BlockID
+  , NodeID
+  , BasicBlock
+  , Node
+  , NodeKind(..)
+  , IRGraph
   ) where
   
 import           Compile.AST (AST, Op)
@@ -124,7 +131,7 @@ translateStmt (AST.Ret expr _) = do
   
   
 translateExpr :: AST.Expr -> IRGen NodeID
-translateExpr (AST.IntExpr i _) = emit (IntConst i)
+translateExpr (AST.IntExpr i _) = emit (IntConst (read i))
 translateExpr (AST.Ident v _) = do
   env <- gets varEnv
   case Map.lookup v env of
