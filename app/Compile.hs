@@ -23,4 +23,3 @@ compile job = do
   let code = codeGen ast
   liftIO $ writeFile (out job) (printX86 code)
   return ()
-
