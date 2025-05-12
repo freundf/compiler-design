@@ -5,6 +5,11 @@ input="$1"
 output="$2"
 
 cabal run l1c -- "$input" temp.s
-gcc temp.s -o "$output"
+status=$?
+if [ $status -ne 0 ]; then
+  rm -f temp.s
+  exit $status
+fi
 
-rm temp.s
+gcc temp.s -o "$output"
+rm -f temp.s
