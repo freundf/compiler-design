@@ -1,7 +1,7 @@
 module Compile.RegAlloc
   ( regAlloc, naiveStrategy
   ) where
-  
+
 import           Compile.X86
 
 import           Control.Monad.State
@@ -17,7 +17,7 @@ data AllocState = AllocState
   { regMap :: Map Opnd Opnd
   , code :: [Instr]
   }
-  
+
 initialState :: RegAlloc -> AllocState
 initialState map = AllocState
   { regMap = map
@@ -25,13 +25,13 @@ initialState map = AllocState
   }
 
 emit :: Instr -> Allocator ()
-emit instr = modify $ \s -> s { code = (code s) ++ [instr] }
+emit instr = modify $ \s -> s { code = code s ++ [instr] }
 
 processInstr :: Instr -> Allocator ()
 processInstr (Mov o1 o2) = do
-  map <- gets regMap
-  let r1 = getReg o1 map
-  let r2 = getReg o2 map
+  regs <- gets regMap
+  let r1 = getReg o1 regs
+  let r2 = getReg o2 regs
   case (r1, r2) of
     (Mem _ _, Mem _ _) -> do
       emit $ Mov (Reg RCX) r2
@@ -44,30 +44,31 @@ processInstr (Add o1 o2) = processBinOp Add o1 o2
 processInstr (Sub o1 o2) = processBinOp Sub o1 o2
 processInstr (Imul o1 o2) = processBinOp Imul o1 o2
 processInstr (Idiv o) = do
-    map <- gets regMap
-    let r = getReg o map
+    regs <- gets regMap
+    let r = getReg o regs
     case r of
-      (Mem reg offset) -> do
+      (Mem _ _) -> do
         emit $ Mov (Reg RCX) r
         emit $ Idiv (Reg RCX)
       _ -> emit $ Idiv r
 processInstr (Neg o) = do
-    map <- gets regMap
-    let r = getReg o map
+    regs <- gets regMap
+    let r = getReg o regs
     case r of
-      (Mem reg offset) -> do
+      (Mem _ _) -> do
         emit $ Mov (Reg RCX) r
         emit $ Neg (Reg RCX)
         emit $ Mov r (Reg RCX)
+      _ -> emit (Neg r)
 processInstr instr = emit instr
 
 processBinOp :: (Opnd -> Opnd -> Instr) -> Opnd -> Opnd -> Allocator ()
 processBinOp instr o1 o2 = do
-    map <- gets regMap
-    let r1 = getReg o1 map
-    let r2 = getReg o2 map
+    regs <- gets regMap
+    let r1 = getReg o1 regs
+    let r2 = getReg o2 regs
     case (r1, r2) of
-      (Mem reg1 offset1, opnd) -> do
+      (Mem _ _, _) -> do
         emit $ Mov (Reg RCX) r1
         emit $ instr (Reg RCX) r2
         emit $ Mov r1 (Reg RCX)
@@ -75,7 +76,7 @@ processBinOp instr o1 o2 = do
 
 
 getReg :: (Ord a) => a -> Map a a -> a
-getReg reg map = Map.findWithDefault reg reg map
+getReg reg = Map.findWithDefault reg reg
 
 
 regAlloc :: X86 -> RegAlloc -> X86
@@ -83,16 +84,16 @@ regAlloc instrs strategy = reserveStack stackUsed (code finalState)
   where
     finalState = execState (mapM_ processInstr instrs) (initialState strategy)
     stackUsed = maximum . map (abs . getOffset . snd) . Map.toList $ strategy
-    getOffset (Reg _) = 0
     getOffset (Mem _ offset) = offset
-    
+    getOffset _ = 0
+
 reserveStack :: Integer -> X86 -> X86
-reserveStack s instr = (allocStack s) ++ reserveStack' s instr
+reserveStack s instr = allocStack s ++ reserveStack' s instr
   where
     reserveStack' _ [] = []
-    reserveStack' s (i:is) = case i of
-      (Ret) -> freeStack ++ [Ret] ++ (reserveStack' s is)
-      _     -> i : reserveStack' s is
+    reserveStack' s' (i:is) = case i of
+      Ret -> freeStack ++ [Ret] ++ reserveStack' s' is
+      _     -> i : reserveStack' s' is
 
 naiveStrategy :: Integer -> RegAlloc
 naiveStrategy maxOffset = Map.fromList $ [
@@ -104,5 +105,4 @@ naiveStrategy maxOffset = Map.fromList $ [
         (VirtReg 5, Reg R13),
         (VirtReg 6, Reg R14),
         (VirtReg 7, Reg R15)
-    ] ++ [(VirtReg (i + 8), Mem RBP (-8 * i)) | i <- [0 .. (maxOffset - 8)]]
-    
+    ] ++ [(VirtReg (i + 8), Mem RBP (- (8 * i))) | i <- [0 .. (maxOffset - 8)]]

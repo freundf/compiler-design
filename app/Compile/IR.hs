@@ -94,19 +94,19 @@ freshId = do
 
 emit :: NodeKind -> IRGen NodeID
 emit kind = do
-  id <- freshId
-  let node = Node id kind
-  modify $ \s -> s { irGraph = IntMap.insert id node (irGraph s)}
-  blockId <- gets current
+  nid <- freshId
+  let node = Node nid kind
+  modify $ \s -> s { irGraph = IntMap.insert nid node (irGraph s)}
+  bid <- gets current
   modify $ \s ->
-    let basicBlock = (irBlocks s) IntMap.! blockId
+    let basicBlock = (irBlocks s) IntMap.! bid
         basicBlock' = basicBlock { bodyNodes = bodyNodes basicBlock ++ [node] }
-    in s { irBlocks = IntMap.insert blockId basicBlock' (irBlocks s)}
-  pure id
+    in s { irBlocks = IntMap.insert bid basicBlock' (irBlocks s)}
+  pure nid
 
     
 translateStmt :: AST.Stmt -> IRGen ()
-translateStmt (AST.Decl name _) = translateStmt (AST.Init name (AST.IntExpr 0 undefined) undefined)
+translateStmt (AST.Decl name _) = translateStmt (AST.Init name (AST.IntExpr "0" undefined) undefined)
 translateStmt (AST.Init name expr _) = do
   e <- translateExpr expr
   modify $ \s -> s { varEnv = Map.insert name e (varEnv s)}
@@ -116,18 +116,18 @@ translateStmt (AST.Asgn name op expr _) = do
   let old = Map.findWithDefault (error "assign to undeclared") name env
   newVal <- case op of
     Nothing -> pure rhs
-    Just op -> emit (BinOp op old rhs)
+    Just binop -> emit (BinOp binop old rhs)
   modify $ \s -> s { varEnv = Map.insert name newVal (varEnv s)}
 translateStmt (AST.Ret expr _) = do
   e <- translateExpr expr
-  id <- freshId
-  let retNode = Node id (Return e)
-  modify $ \s -> s { irGraph = IntMap.insert id retNode (irGraph s)}
-  blockId <- gets current
+  nid <- freshId
+  let retNode = Node nid (Return e)
+  modify $ \s -> s { irGraph = IntMap.insert nid retNode (irGraph s)}
+  bid <- gets current
   modify $ \s ->
-    let basicBlock = (irBlocks s) IntMap.! blockId
+    let basicBlock = (irBlocks s) IntMap.! bid
         basicBlock' = basicBlock { terminator = retNode }
-    in s { irBlocks = IntMap.insert blockId basicBlock' (irBlocks s)}
+    in s { irBlocks = IntMap.insert bid basicBlock' (irBlocks s)}
   
   
 translateExpr :: AST.Expr -> IRGen NodeID
@@ -135,7 +135,7 @@ translateExpr (AST.IntExpr i _) = emit (IntConst (read i))
 translateExpr (AST.Ident v _) = do
   env <- gets varEnv
   case Map.lookup v env of
-    Just id -> pure id
+    Just vid -> pure vid
     Nothing -> error $ "variable not declared: " ++ v
 translateExpr (AST.UnExpr op expr) = do
   e <- translateExpr expr

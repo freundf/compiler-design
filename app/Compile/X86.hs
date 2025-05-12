@@ -14,14 +14,14 @@ data Instr
   | Ret
   | Push Opnd
   | Pop Opnd
-  
+
 data Opnd
   = VirtReg Integer
   | Reg Reg
-  | Imm Integer
+  | Imm String
   | Mem Reg Integer
   deriving (Eq, Ord)
-  
+
 data Reg = RAX | RBX | RCX | RDX | RSP | RBP | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
   deriving (Eq, Ord)
 
@@ -32,7 +32,7 @@ allocStack :: Integer -> [Instr]
 allocStack size =
   [ Push (Reg RBP)
   , Mov (Reg RBP) (Reg RSP)
-  , Sub (Reg RSP) (Imm size)
+  , Sub (Reg RSP) (Imm (show size))
   ]
 
 freeStack :: [Instr]
@@ -42,8 +42,8 @@ freeStack =
   ]
 
 printX86 :: X86 -> String
-printX86 = unlines . map (show)
-  
+printX86 = unlines . map show
+
 instance Show Instr where
   show (Mov o1 o2)  = "mov " ++ show o1 ++ ", " ++ show o2
   show (Add o1 o2)  = "add " ++ show o1 ++ ", " ++ show o2
@@ -53,9 +53,9 @@ instance Show Instr where
   show (Neg o)      = "neg " ++ show o
   show (Push o)     = "push " ++ show o
   show (Pop o)     = "pop " ++ show o
-  show (Cqo)        = "cqo"
-  show (Ret)        = "ret"
-  show (Prologue) = unlines [
+  show Cqo        = "cqo"
+  show Ret        = "ret"
+  show Prologue = unlines [
     ".intel_syntax noprefix",
     ".global main",
     ".global _main",
@@ -69,15 +69,15 @@ instance Show Instr where
     "",
     "_main:"
     ]
-  
+
 instance Show Opnd where
   show (VirtReg i) = "v" ++ show i
   show (Reg r) = show r
-  show (Imm i) = show i
+  show (Imm n) = n
   show (Mem r i) = if i > 0
                     then "[" ++ show r ++ " + " ++ show i ++ "]"
                     else "[" ++ show r ++ " - " ++ show (abs i) ++ "]"
-  
+
 instance Show Reg where
   show RAX = "rax"
   show RBX = "rbx"

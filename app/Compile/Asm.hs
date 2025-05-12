@@ -69,7 +69,7 @@ genStmt (AST.Ret e _) = do
 genExpr :: Expr -> CodeGen Opnd
 genExpr (IntExpr n _) = do
   r <- freshReg
-  emit (Mov r (Imm (read n)))
+  emit (Mov r (Imm n))
   pure r
 genExpr (Ident name _) = lookupVar name
 genExpr (UnExpr op e) = do
