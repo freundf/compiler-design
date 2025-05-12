@@ -19,8 +19,8 @@ data AllocState = AllocState
   }
 
 initialState :: RegAlloc -> AllocState
-initialState map = AllocState
-  { regMap = map
+initialState regs = AllocState
+  { regMap = regs
   , code = []
   }
 
@@ -72,7 +72,7 @@ processBinOp instr o1 o2 = do
         emit $ Mov (Reg RCX) r1
         emit $ instr (Reg RCX) r2
         emit $ Mov r1 (Reg RCX)
-      _ -> emit $ Mov r1 r2
+      _ -> emit $ instr r1 r2
 
 
 getReg :: (Ord a) => a -> Map a a -> a
@@ -92,7 +92,7 @@ reserveStack s instr = allocStack s ++ reserveStack' s instr
   where
     reserveStack' _ [] = []
     reserveStack' s' (i:is) = case i of
-      Ret -> freeStack ++ [Ret] ++ reserveStack' s' is
+      Ret -> freeStack s' ++ [Ret] ++ reserveStack' s' is
       _     -> i : reserveStack' s' is
 
 naiveStrategy :: Integer -> RegAlloc

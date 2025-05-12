@@ -57,7 +57,7 @@ genStmt (AST.Decl name _) = do
 genStmt (AST.Init name e _) = do
   r <- genExpr e
   assignVar name r
-genStmt (AST.Asgn name op e _) = do
+genStmt (AST.Asgn name _ e _) = do -- TODO: correctly process combined assignements (+=, -=, ...)
   rhs <- genExpr e
   lhs <- lookupVar name
   emit (Mov lhs rhs)
@@ -102,5 +102,6 @@ genExpr (BinExpr op e1 e2) = do
       emit Cqo
       emit (Idiv r2)
       emit (Mov r (Reg RDX))
+    _ -> error ("unknown binary expression (error in AST?): " ++ show op)
   pure r
   

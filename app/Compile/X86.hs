@@ -29,17 +29,19 @@ tempReg :: [Reg]
 tempReg = [R8, R9, R10, R11, R12, R13, R14, R15]
 
 allocStack :: Integer -> [Instr]
-allocStack size =
-  [ Push (Reg RBP)
-  , Mov (Reg RBP) (Reg RSP)
-  , Sub (Reg RSP) (Imm (show size))
-  ]
+allocStack size
+  | size == 0 = []
+  | otherwise = [ Push (Reg RBP)
+                , Mov (Reg RBP) (Reg RSP)
+                , Sub (Reg RSP) (Imm (show size))
+                ]
 
-freeStack :: [Instr]
-freeStack =
-  [ Mov (Reg RSP) (Reg RBP)
-  , Pop (Reg RBP)
-  ]
+freeStack :: Integer -> [Instr]
+freeStack size
+  | size == 0 = []
+  | otherwise = [ Mov (Reg RSP) (Reg RBP)
+                , Pop (Reg RBP)
+                ]
 
 printX86 :: X86 -> String
 printX86 = unlines . map show
@@ -92,6 +94,6 @@ instance Show Reg where
   show R10 = "r10"
   show R11 = "r11"
   show R12 = "r12"
-  show R13 = "r14"
+  show R13 = "r13"
   show R14 = "r14"
   show R15 = "r15"
