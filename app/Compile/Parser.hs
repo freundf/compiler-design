@@ -169,7 +169,7 @@ decLiteral = string "0" <|> (:) <$> oneOf ['1'..'9'] <*> many digitChar
 
 hexLiteral :: Parser String
 hexLiteral = do
-  void $ chunk "0x"
+  void $ string' "0x"
   digits <- some hexDigitChar
   return ("0x" ++ digits)
 
@@ -189,7 +189,7 @@ decimal = do
 
 hexadecimal :: Parser Integer
 hexadecimal = do
-  void $ chunk "0x"
+  void $ string' "0x"
   n <- lexeme L.hexadecimal
   if n > maxHex
     then fail $ "Hexadecimal literal out of bounds: " ++ "0x" ++ showHex n ""
