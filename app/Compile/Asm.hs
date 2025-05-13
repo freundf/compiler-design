@@ -88,11 +88,14 @@ genExpr (IntExpr n _) = do
   pure r
 genExpr (Ident name _) = lookupVar name
 genExpr (UnExpr op e) = do
-  r <- genExpr e
-  emit $ case op of
-    AST.Neg -> (Neg r)
+  r1 <- genExpr e
+  r2 <- freshReg
+  case op of
+    AST.Neg -> do
+      emit (Mov r2 r1)
+      emit (Neg r2)
+      pure r2
     _ -> error ("unknown unary expression: " ++ show op)
-  pure r
 genExpr (BinExpr op e1 e2) = do
   r1 <- genExpr e1
   r2 <- genExpr e2
