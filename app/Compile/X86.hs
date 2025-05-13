@@ -65,8 +65,8 @@ instance Show Instr where
     "",
     "main:",
     "call _main",
-    "movq rdi, rax",
-    "movq rax, 0x3C",
+    "mov rdi, rax",
+    "mov rax, 0x3C",
     "syscall",
     "",
     "_main:"
