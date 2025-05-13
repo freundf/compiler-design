@@ -11,6 +11,7 @@ import           Control.Monad.IO.Class (liftIO)
 import           Data.Functor (void)
 import           Data.Void (Void)
 import           Data.Int (Int32)
+import           Data.Char (isAscii, isAsciiLower, isAsciiUpper, isDigit)
 import           Numeric (showHex)
 
 import           Text.Megaparsec
@@ -229,10 +230,14 @@ operator = lexeme ((:) <$> opStart <*> many opLetter)
 
 -- Identifiers
 identStart :: Parser Char
-identStart = letterChar <|> char '_'
+identStart = satisfy isIdentStart
+  where
+    isIdentStart c = isAscii c && (isAsciiUpper c || isAsciiLower c || c == '_')
 
 identLetter :: Parser Char
-identLetter = alphaNumChar <|> char '_'
+identLetter = satisfy isIdentLetter
+  where
+    isIdentLetter c = isAscii c && (isAsciiUpper c || isAsciiLower c || isDigit c || c == '_')
 
 identifier :: Parser String
 identifier = (lexeme . try) (p >>= check)
