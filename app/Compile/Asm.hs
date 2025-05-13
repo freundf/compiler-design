@@ -55,8 +55,15 @@ genStmt (AST.Decl name _) = do
   r <- freshReg
   assignVar name r
 genStmt (AST.Init name e _) = do
-  r <- genExpr e
-  assignVar name r
+  case e of
+    Ident _ _ -> do
+      r1 <- genExpr e
+      r2 <- freshReg
+      emit (Mov r2 r1)
+      assignVar name r2
+    _ -> do
+      r <- genExpr e
+      assignVar name r
 genStmt (AST.Asgn name asgnOp e _) = do
   rhs <- genExpr e
   lhs <- lookupVar name
