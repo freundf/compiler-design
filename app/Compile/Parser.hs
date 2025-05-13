@@ -134,10 +134,16 @@ expr = makeExprParser expr' opTable <?> "expression"
 
 -- Lexer starts here, probably worth moving to its own file at some point
 sc :: Parser ()
-sc = L.space space1 lineComment blockComment
+sc = L.space l1Space1 lineComment blockComment
   where
     lineComment = L.skipLineComment "//"
     blockComment = L.skipBlockCommentNested "/*" "*/"
+    
+isL1Whitespace :: Char -> Bool
+isL1Whitespace c = c == ' ' || c == '\t' || c == '\r' || c == '\n'
+
+l1Space1 :: Parser ()
+l1Space1 = void $ some (satisfy isL1Whitespace <?> "whitespace")
 
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
