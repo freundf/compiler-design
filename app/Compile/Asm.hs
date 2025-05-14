@@ -26,7 +26,7 @@ codeGen (Block stmts _) = Prologue : regAlloc (code finalState) strategy
     initialState = CodeGenState Map.empty 0 []
     finalState = execState (genBlock stmts) initialState
     strategy = let maxReg = nextReg (finalState) - 1
-               in if maxReg < 500
+               in if maxReg < 300
                   then coloringStrategy (code finalState)
                   else naiveStrategy maxReg
     

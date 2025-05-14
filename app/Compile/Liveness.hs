@@ -4,7 +4,6 @@ module Compile.Liveness
 
 import           Compile.X86
 
-import           Prelude hiding (succ)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
@@ -13,24 +12,15 @@ import           Control.Monad (foldM, when, zipWithM_)
 import           Control.Monad.State
 
 type Var = Opnd
-type Line = Integer
+type Line = Int
 
 data LivenessState = LivenessState
   { live :: Map Line (Set Var)
   , use :: Map Line (Set Var)
   , def :: Map Line (Set Var)
-  , succ :: Map Line (Set Line)
+  , succs :: Map Line (Set Line)
   } deriving (Show)
   
-addSucc :: Line -> Line -> LivenessState -> LivenessState
-addSucc l succL = \s -> s { succ = Map.insertWith Set.union l (Set.singleton succL) (succ s) }
-  
-addDef :: Line -> Var -> LivenessState -> LivenessState
-addDef l v = \s -> s { def = Map.insertWith Set.union l (Set.singleton v) (def s) }
-
-addUse :: Line -> Var -> LivenessState -> LivenessState
-addUse l v = \s -> s { use = Map.insertWith Set.union l (Set.singleton v) (use s) }
-
 type LivenessAnalysis a = State LivenessState a
 
 liveness :: X86 -> LivenessState
@@ -38,60 +28,44 @@ liveness instrs = execState (extractFacts (reverse instrs) >> livenessAnalysis) 
   where
     initialState = LivenessState Map.empty Map.empty Map.empty Map.empty
     
+    
+
 
 extractFacts :: [Instr] -> LivenessAnalysis ()
-extractFacts instr = zipWithM_ processInstr instr [1..]
+extractFacts instr = zipWithM_ processInstr instr [n, n - 1 .. 1]
+  where
+    n = length instr
 
-processBinOp :: Opnd -> Opnd -> Line -> LivenessAnalysis ()
-processBinOp o1 o2 l = do
-  case o1 of
-    (Imm _) -> pure ()
-    _ -> do
-      modify $ addDef l o1
-      modify $ addUse l o1
-  case o2 of
-    (Imm _) -> pure ()
-    _ -> do
-      modify $ addUse l o2
-  modify $ addSucc l (l + 1)
-
+instrFacts :: Instr -> (Set Var, Set Var, Line -> Set Line)
+instrFacts instr = liftToSet $ case instr of
+  --  instr ->  ( use,                   def,                succs)
+  Mov o1 o2 ->  ( [o2],                  [o1],               [(+1)] )
+  Add o1 o2 ->  ( [o1, o2],              [o1],               [(+1)] )
+  Sub o1 o2 ->  ( [o1, o2],              [o1],               [(+1)] )
+  Imul o1 o2 -> ( [o1, o2],              [o1],               [(+1)] )
+  Idiv o ->     ( [o, Reg RAX, Reg RDX], [Reg RAX, Reg RDX], [(+1)] )
+  Cdq ->        ( [Reg RAX],             [Reg RDX],          [(+1)] )
+  Neg o ->      ( [o],                   [o],                [(+1)] )
+  Ret ->        ( [Reg RAX],             [],                 []     )
+  _ ->          ( [],                    [],                 [(+1)] )
+  where
+    liftToSet :: ([Var], [Var], [Line -> Line]) -> (Set Var, Set Var, Line -> Set Line)
+    liftToSet (u, d, s) = ( Set.fromList $ filter isVar u
+                          , Set.fromList $ filter isVar d
+                          , Set.fromList . (s <*>) . pure
+                          )
+                          
+    isVar (Imm _) = False
+    isVar _       = True
+                          
 processInstr :: Instr -> Line -> LivenessAnalysis ()
-processInstr (Mov o1 o2) l = do
-  case o1 of
-    (Imm _) -> pure ()
-    _ -> do
-      modify $ addDef l o1
-  case o2 of
-    (Imm _) -> pure ()
-    _ -> do
-      modify $ addUse l o2
-  modify $ addSucc l (l + 1)
-processInstr (Add o1 o2) l = processBinOp o1 o2 l
-processInstr (Sub o1 o2) l = processBinOp o1 o2 l
-processInstr (Imul o1 o2) l = processBinOp o1 o2 l
-processInstr (Idiv o) l = do
-  case o of
-    (Imm _) -> pure ()
-    _ -> do
-      modify $ addUse l o
-  modify $ addUse l (Reg RAX)
-  modify $ addUse l (Reg RDX)
-  modify $ addDef l (Reg RAX)
-  modify $ addDef l (Reg RDX)
-  modify $ addSucc l (l + 1)
-processInstr (Cdq) l = do
-  modify $ addUse l (Reg RAX)
-  modify $ addDef l (Reg RDX)
-  modify $ addSucc l (l + 1)
-processInstr (Neg o) l = do
-  modify $ addUse l o
-  modify $ addDef l o
-  modify $ addSucc l (l + 1)
-processInstr (Ret) l = do
-  modify $ addUse l (Reg RAX)
-  modify $ addSucc l (l + 1)
-processInstr _ l = modify $ addSucc l (l + 1)
-
+processInstr instr l = do
+  let (useVars, defVars, succLines) = instrFacts instr
+  modify $ \s -> s
+    { use   = Map.insertWith Set.union l useVars (use s)
+    , def   = Map.insertWith Set.union l defVars (def s)
+    , succs = Map.insertWith Set.union l (succLines l) (succs s)
+    }
 
 livenessAnalysis :: LivenessAnalysis ()
 livenessAnalysis = do
@@ -109,10 +83,10 @@ updateLine acc l = do
   st <- get
   let used = find l (use st)
       defined = find l (def st)
-      succs = find l (succ st)
+      successors = find l (succs st)
       live_k1 = used
       live_k2 = Set.fromList [ u
-                             | l' <- Set.toList succs
+                             | l' <- Set.toList successors
                              , u <- Set.toList (find l' (live st))
                              , Set.notMember u defined
                              ]
