@@ -11,7 +11,6 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Control.Monad (foldM, when, zipWithM_)
 import           Control.Monad.State
-import Compile.GraphColoring
 
 type Var = Opnd
 type Line = Integer
@@ -35,9 +34,10 @@ addUse l v = \s -> s { use = Map.insertWith Set.union l (Set.singleton v) (use s
 type LivenessAnalysis a = State LivenessState a
 
 liveness :: X86 -> LivenessState
-liveness instrs = execState (extractFacts instrs >> livenessAnalysis) initialState
+liveness instrs = execState (extractFacts (reverse instrs) >> livenessAnalysis) initialState
   where
     initialState = LivenessState Map.empty Map.empty Map.empty Map.empty
+    
 
 extractFacts :: [Instr] -> LivenessAnalysis ()
 extractFacts instr = zipWithM_ processInstr instr [1..]
@@ -116,7 +116,6 @@ updateLine acc l = do
 find :: Ord k => k -> Map k (Set v) -> (Set v)
 find k m = Map.findWithDefault Set.empty k m
   
-
 livenessGraph :: LivenessState -> Map Var (Set Var)
 livenessGraph ls =
   let

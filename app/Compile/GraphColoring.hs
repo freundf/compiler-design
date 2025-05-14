@@ -11,9 +11,8 @@ import           Data.List (maximumBy)
 
 type InterferenceGraph a = Map a (Set a)
 
-colorGraph :: (Ord a, Ord c) => [c] -> InterferenceGraph a -> Map a c
+colorGraph :: (Show a, Show c, Ord a, Ord c) => [c] -> InterferenceGraph a -> Map a c
 colorGraph colors graph = greedyColoring colors graph (maximumCardinalitySearch graph)
-
 
 greedyColoring :: (Ord a, Ord c) => [c] -> InterferenceGraph a -> [a] -> Map a c
 greedyColoring colors graph ordering = greedy ordering Map.empty
@@ -29,24 +28,12 @@ greedyColoring colors graph ordering = greedy ordering Map.empty
 
 
 maximumCardinalitySearch :: (Ord a) => InterferenceGraph a -> [a]
-maximumCardinalitySearch graph = mcs graph (Map.map (const 0) graph) (Set.fromList (Map.keys graph)) []
+maximumCardinalitySearch graph = mcs (Map.map (const (0 :: Int)) graph) (Set.fromList (Map.keys graph)) []
   where
-    mcs _ _ remaining ordering | Set.null remaining = ordering
-    mcs graph weights remaining ordering =
+    mcs _ remaining ordering | Set.null remaining = ordering
+    mcs weights remaining ordering =
       let v = maximumBy (comparing (weights Map.!)) (Set.toList remaining)
           neighbours = Map.findWithDefault Set.empty v graph
           newWeights = foldr (\u -> Map.adjust (+1) u) weights (Set.toList neighbours)
-      in mcs graph newWeights (Set.delete v remaining) (ordering ++ [v])
+      in mcs newWeights (Set.delete v remaining) (ordering ++ [v])
       
-      
-exampleGraph = Map.fromList
-  [(1,Set.fromList [2,3,4,5])
-  ,(2,Set.fromList [1,3,4])
-  ,(3,Set.fromList [1,2,4,5])
-  ,(4,Set.fromList [2,3])
-  ,(5,Set.fromList [3,2,3])
-  ,(6,Set.fromList [1,2,3,4,5])
-  ,(7,Set.fromList [3,4,5,1,6])
-  ,(8,Set.fromList [1,2,3,4,5,6,7])
-  ]
-  

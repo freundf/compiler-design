@@ -5,7 +5,7 @@ module Compile.Asm
 import           Compile.X86
 import           Compile.AST (AST(..), Stmt, Expr(..))
 import qualified Compile.AST as AST
-import           Compile.RegAlloc (regAlloc, naiveStrategy, coloringStrategy)
+import           Compile.RegAlloc (regAlloc, coloringStrategy)
 
 import           Control.Monad.State
 import qualified Data.Map as Map
@@ -25,8 +25,8 @@ codeGen (Block stmts _) = Prologue : regAlloc (code finalState) strategy
   where
     initialState = CodeGenState Map.empty 0 []
     finalState = execState (genBlock stmts) initialState
-    strategy = naiveStrategy (nextReg finalState)
-    -- strategy = coloringStrategy (code finalState)
+    strategy = coloringStrategy (code finalState)
+    
 freshReg :: CodeGen Opnd
 freshReg = do
   n <- gets nextReg
