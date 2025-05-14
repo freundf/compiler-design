@@ -9,6 +9,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
+import           Control.Monad (foldM, when, zipWithM)
 import           Control.Monad.State
 import Compile.GraphColoring
 
