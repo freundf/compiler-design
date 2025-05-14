@@ -11,14 +11,18 @@ import           Data.List (maximumBy)
 
 type InterferenceGraph a = Map a (Set a)
 
-colorGraph :: (Show a, Show c, Ord a, Ord c) => [c] -> InterferenceGraph a -> Map a c
-colorGraph colors graph = greedyColoring colors graph (maximumCardinalitySearch graph)
+colorGraph :: (Show a, Show c, Ord a, Ord c) => [c] -> InterferenceGraph a -> Map a c -> Map a c
+colorGraph colors graph precolored = greedyColoring colors graph (maximumCardinalitySearch graph) precolored
 
-greedyColoring :: (Ord a, Ord c) => [c] -> InterferenceGraph a -> [a] -> Map a c
-greedyColoring colors graph ordering = greedy ordering Map.empty
+greedyColoring :: (Ord a, Ord c) => [c] -> InterferenceGraph a -> [a] -> Map a c -> Map a c
+greedyColoring colors graph ordering precolored = greedy ordering precolored
   where
     greedy [] coloring = coloring
-    greedy (n:ns) coloring = greedy ns (Map.insert n (chooseColor n coloring) coloring)
+    greedy (n:ns) coloring
+      | Map.member n coloring = greedy ns coloring
+      | otherwise =
+          let color = chooseColor n coloring
+          in greedy ns (Map.insert n color coloring)
     
     chooseColor n coloring = head [c | c <- colors, c `Set.notMember` neighbourColors n coloring]
  

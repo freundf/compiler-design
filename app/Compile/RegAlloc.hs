@@ -90,7 +90,7 @@ regAlloc instrs strategy = reserveStack stackUsed (code finalState)
     getOffset _ = 0
     
 coloringStrategy :: X86 -> RegAlloc
-coloringStrategy instrs = colorGraph registers (livenessGraph (liveness instrs))
+coloringStrategy instrs = colorGraph registers (livenessGraph (liveness instrs)) (Map.fromList fixedRegisters)
 
 reserveStack :: Integer -> X86 -> X86
 reserveStack s instr = allocStack s ++ reserveStack' s instr

@@ -26,7 +26,10 @@ data Reg = RAX | RBX | RCX | RDX | RSP | RBP | RSI | RDI | R8 | R9 | R10 | R11 |
   deriving (Eq, Ord)
 
 registers :: [Opnd]
-registers = [Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15] ++ [Mem RBP (-8 * i) | i <- [1..]]
+registers = [Reg RAX, Reg RBX, Reg RCX, Reg RDX, Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15] ++ [Mem RBP (-8 * i) | i <- [1..]]
+
+fixedRegisters :: [(Opnd, Opnd)]
+fixedRegisters = [(Reg RAX, Reg RAX), (Reg RDX, Reg RDX)]
 
 allocStack :: Integer -> [Instr]
 allocStack size

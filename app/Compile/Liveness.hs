@@ -45,41 +45,51 @@ extractFacts instr = zipWithM_ processInstr instr [1..]
 processBinOp :: Opnd -> Opnd -> Line -> LivenessAnalysis ()
 processBinOp o1 o2 l = do
   case o1 of
-    v@(VirtReg _) -> do
-      modify $ addDef l v
-      modify $ addUse l v
-    _         -> pure ()
+    (Imm _) -> pure ()
+    _ -> do
+      modify $ addDef l o1
+      modify $ addUse l o1
   case o2 of
-    v@(VirtReg _) -> modify $ addUse l v
-    _         -> pure ()
+    (Imm _) -> pure ()
+    _ -> do
+      modify $ addUse l o2
   modify $ addSucc l (l + 1)
-
 
 processInstr :: Instr -> Line -> LivenessAnalysis ()
 processInstr (Mov o1 o2) l = do
   case o1 of
-    v@(VirtReg _) -> modify $ addDef l v
-    _         -> pure ()
+    (Imm _) -> pure ()
+    _ -> do
+      modify $ addDef l o1
   case o2 of
-    v@(VirtReg _) -> modify $ addUse l v
-    _         -> pure ()
+    (Imm _) -> pure ()
+    _ -> do
+      modify $ addUse l o2
   modify $ addSucc l (l + 1)
 processInstr (Add o1 o2) l = processBinOp o1 o2 l
 processInstr (Sub o1 o2) l = processBinOp o1 o2 l
 processInstr (Imul o1 o2) l = processBinOp o1 o2 l
 processInstr (Idiv o) l = do
   case o of
-    v@(VirtReg _) -> modify $ addUse l v
-    _         -> pure ()
+    (Imm _) -> pure ()
+    _ -> do
+      modify $ addUse l o
+  modify $ addUse l (Reg RAX)
+  modify $ addUse l (Reg RDX)
+  modify $ addDef l (Reg RAX)
+  modify $ addDef l (Reg RDX)
+  modify $ addSucc l (l + 1)
+processInstr (Cdq) l = do
+  modify $ addUse l (Reg RAX)
+  modify $ addDef l (Reg RDX)
   modify $ addSucc l (l + 1)
 processInstr (Neg o) l = do
-  case o of
-    v@(VirtReg _) -> do
-      modify $ addUse l v
-      modify $ addDef l v
-    _         -> pure ()
+  modify $ addUse l o
+  modify $ addDef l o
   modify $ addSucc l (l + 1)
-processInstr (Ret) _ = pure ()
+processInstr (Ret) l = do
+  modify $ addUse l (Reg RAX)
+  modify $ addSucc l (l + 1)
 processInstr _ l = modify $ addSucc l (l + 1)
 
 
