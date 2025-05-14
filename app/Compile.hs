@@ -9,7 +9,9 @@ import Compile.Semantic (semanticAnalysis)
 import Compile.X86 (printX86)
 import Error (L1ExceptT)
 
-import Control.Monad.IO.Class
+import Control.Monad.IO.Class (liftIO)
+import System.Process (callProcess)
+import System.FilePath ((-<.>))
 
 data Job = Job
   { src :: FilePath
@@ -21,5 +23,8 @@ compile job = do
   ast <- parseAST $ src job
   semanticAnalysis ast
   let code = codeGen ast
-  liftIO $ writeFile (out job) (printX86 code)
+  liftIO $ do
+    let out_s = out job -<.> "s"
+    writeFile (out_s) (printX86 code)
+    callProcess "gcc" [out_s, "-o", out job]
   return ()
