@@ -92,7 +92,7 @@ regAlloc instrs strategy = reserveStack stackUsed (code finalState)
 coloringStrategy :: X86 -> RegAlloc
 coloringStrategy instrs = colorGraph registers (livenessGraph (liveness instrs)) (Map.fromList fixedRegisters)
 
-reserveStack :: Integer -> X86 -> X86
+reserveStack :: Int -> X86 -> X86
 reserveStack s instr = allocStack s ++ reserveStack' s instr
   where
     reserveStack' _ [] = []
@@ -100,7 +100,7 @@ reserveStack s instr = allocStack s ++ reserveStack' s instr
       Ret -> freeStack s' ++ [Ret] ++ reserveStack' s' is
       _     -> i : reserveStack' s' is
 
-naiveStrategy :: Integer -> RegAlloc
+naiveStrategy :: Int -> RegAlloc
 naiveStrategy maxOffset = Map.fromList $ [
         (VirtReg 0, Reg R8),
         (VirtReg 1, Reg R9),

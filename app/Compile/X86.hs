@@ -16,22 +16,22 @@ data Instr
   | Pop Opnd
 
 data Opnd
-  = VirtReg Integer
+  = VirtReg Int
   | Reg Reg
   | Imm String
-  | Mem Reg Integer
+  | Mem Reg Int
   deriving (Eq, Ord)
 
 data Reg = RAX | RBX | RCX | RDX | RSP | RBP | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
   deriving (Eq, Ord)
 
 registers :: [Opnd]
-registers = [Reg RAX, Reg RBX, Reg RCX, Reg RDX, Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15] ++ [Mem RBP (-8 * i) | i <- [1..]]
+registers = [Reg RAX, Reg RBX, Reg RDX, Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15] ++ [Mem RBP (-8 * i) | i <- [1..]]
 
 fixedRegisters :: [(Opnd, Opnd)]
-fixedRegisters = [(Reg RAX, Reg RAX), (Reg RDX, Reg RDX)]
+fixedRegisters = [(Reg RAX, Reg RAX), (Reg RBX, Reg RBX), (Reg RCX, Reg RCX), (Reg RDX, Reg RDX)]
 
-allocStack :: Integer -> [Instr]
+allocStack :: Int -> [Instr]
 allocStack size
   | size == 0 = []
   | otherwise = [ Push (Reg RBP)
@@ -39,7 +39,7 @@ allocStack size
                 , Sub (Reg RSP) (Imm (show size))
                 ]
 
-freeStack :: Integer -> [Instr]
+freeStack :: Int -> [Instr]
 freeStack size
   | size == 0 = []
   | otherwise = [ Mov (Reg RSP) (Reg RBP)

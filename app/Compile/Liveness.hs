@@ -116,10 +116,10 @@ updateLine acc l = do
                              , u <- Set.toList (find l' (live st))
                              , Set.notMember u defined
                              ]
-      newLive = Map.insertWith Set.union l (Set.union live_k1 live_k2) (live st)
-      changed = newLive /= (live st)
+      newLive = Set.union live_k1 live_k2
+      changed = newLive /= (find l (live st))
    
-  modify $ \s -> s { live = newLive }
+  modify $ \s -> s { live = Map.insertWith Set.union l newLive (live st) }
   pure (acc || changed)
   
 -- helper function

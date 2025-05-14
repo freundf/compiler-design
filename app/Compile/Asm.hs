@@ -5,7 +5,7 @@ module Compile.Asm
 import           Compile.X86
 import           Compile.AST (AST(..), Stmt, Expr(..))
 import qualified Compile.AST as AST
-import           Compile.RegAlloc (regAlloc, coloringStrategy)
+import           Compile.RegAlloc (regAlloc, coloringStrategy, naiveStrategy)
 
 import           Control.Monad.State
 import qualified Data.Map as Map
@@ -16,7 +16,7 @@ type CodeGen a = State CodeGenState a
 
 data CodeGenState = CodeGenState
   { regMap :: Map.Map VarName Opnd
-  , nextReg :: Integer
+  , nextReg :: Int
   , code :: X86
   }
 
@@ -25,7 +25,10 @@ codeGen (Block stmts _) = Prologue : regAlloc (code finalState) strategy
   where
     initialState = CodeGenState Map.empty 0 []
     finalState = execState (genBlock stmts) initialState
-    strategy = coloringStrategy (code finalState)
+    strategy = let maxReg = nextReg (finalState) - 1
+               in if maxReg < 500
+                  then coloringStrategy (code finalState)
+                  else naiveStrategy maxReg
     
 freshReg :: CodeGen Opnd
 freshReg = do
@@ -68,7 +71,10 @@ genStmt (AST.Asgn name asgnOp e _) = do
   rhs <- genExpr e
   lhs <- lookupVar name
   case asgnOp of
-    Nothing -> emit (Mov lhs rhs)
+    Nothing -> do
+      r <- freshReg
+      assignVar name r
+      emit (Mov r rhs)
     Just AST.Add -> emit (Add lhs rhs)
     Just AST.Sub -> emit (Sub lhs rhs)
     Just AST.Mul -> emit (Imul lhs rhs)
