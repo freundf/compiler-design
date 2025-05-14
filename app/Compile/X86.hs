@@ -10,7 +10,7 @@ data Instr
   | Imul Opnd Opnd
   | Idiv Opnd
   | Neg Opnd
-  | Cqo
+  | Cdq
   | Ret
   | Push Opnd
   | Pop Opnd
@@ -25,8 +25,8 @@ data Opnd
 data Reg = RAX | RBX | RCX | RDX | RSP | RBP | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
   deriving (Eq, Ord)
 
-tempReg :: [Reg]
-tempReg = [R8, R9, R10, R11, R12, R13, R14, R15]
+registers :: [Opnd]
+registers = [Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15] ++ [Mem RBP (-8 * i) | i <- [1..]]
 
 allocStack :: Integer -> [Instr]
 allocStack size
@@ -55,7 +55,7 @@ instance Show Instr where
   show (Neg o)      = "neg " ++ show o
   show (Push o)     = "push " ++ show o
   show (Pop o)     = "pop " ++ show o
-  show Cqo        = "cqo"
+  show Cdq        = "cdq"
   show Ret        = "ret"
   show Prologue = unlines [
     ".intel_syntax noprefix",
@@ -65,8 +65,8 @@ instance Show Instr where
     "",
     "main:",
     "call _main",
-    "mov rdi, rax",
-    "mov rax, 0x3C",
+    "mov edi, eax",
+    "mov eax, 0x3C",
     "syscall",
     "",
     "_main:"
@@ -81,19 +81,19 @@ instance Show Opnd where
                     else "[" ++ show r ++ " - " ++ show (abs i) ++ "]"
 
 instance Show Reg where
-  show RAX = "rax"
-  show RBX = "rbx"
-  show RCX = "rcx"
-  show RDX = "rdx"
-  show RSP = "rsp"
-  show RBP = "rbp"
-  show RSI = "rsi"
-  show RDI = "rdi"
-  show R8  = "r8"
-  show R9  = "r9"
-  show R10 = "r10"
-  show R11 = "r11"
-  show R12 = "r12"
-  show R13 = "r13"
-  show R14 = "r14"
-  show R15 = "r15"
+  show RAX = "eax"
+  show RBX = "ebx"
+  show RCX = "ecx"
+  show RDX = "edx"
+  show RSP = "esp"
+  show RBP = "ebp"
+  show RSI = "esi"
+  show RDI = "edi"
+  show R8  = "r8d"
+  show R9  = "r9d"
+  show R10 = "r10d"
+  show R11 = "r11d"
+  show R12 = "r12d"
+  show R13 = "r13d"
+  show R14 = "r14d"
+  show R15 = "r15d"

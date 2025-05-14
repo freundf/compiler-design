@@ -5,7 +5,7 @@ module Compile.Asm
 import           Compile.X86
 import           Compile.AST (AST(..), Stmt, Expr(..))
 import qualified Compile.AST as AST
-import           Compile.RegAlloc (regAlloc, naiveStrategy)
+import           Compile.RegAlloc (regAlloc, naiveStrategy, coloringStrategy)
 
 import           Control.Monad.State
 import qualified Data.Map as Map
@@ -26,7 +26,7 @@ codeGen (Block stmts _) = Prologue : regAlloc (code finalState) strategy
     initialState = CodeGenState Map.empty 0 []
     finalState = execState (genBlock stmts) initialState
     strategy = naiveStrategy (nextReg finalState)
-    
+    -- strategy = coloringStrategy (code finalState)
 freshReg :: CodeGen Opnd
 freshReg = do
   n <- gets nextReg
@@ -74,12 +74,12 @@ genStmt (AST.Asgn name asgnOp e _) = do
     Just AST.Mul -> emit (Imul lhs rhs)
     Just AST.Div -> do
       emit (Mov (Reg RAX) lhs)
-      emit Cqo
+      emit Cdq
       emit (Idiv rhs)
       emit (Mov lhs (Reg RAX))
     Just AST.Mod -> do
       emit (Mov (Reg RAX) lhs)
-      emit Cqo
+      emit Cdq
       emit (Idiv rhs)
       emit (Mov lhs (Reg RDX))
     Just op -> error ("unknown assignment operator: " ++ show op)
@@ -119,12 +119,12 @@ genExpr (BinExpr op e1 e2) = do
       emit (Sub r r2)
     AST.Div -> do
       emit (Mov (Reg RAX) r1)
-      emit Cqo
+      emit Cdq
       emit (Idiv r2)
       emit (Mov r (Reg RAX))
     AST.Mod -> do
       emit (Mov (Reg RAX) r1)
-      emit Cqo
+      emit Cdq
       emit (Idiv r2)
       emit (Mov r (Reg RDX))
     _ -> error ("unknown binary expression (error in AST?): " ++ show op)
