@@ -1,5 +1,5 @@
-module Liveness
-  (
+module Compile.Liveness
+  ( liveness, livenessGraph
   ) where
 
 import           Compile.X86
@@ -10,10 +10,9 @@ import qualified Data.Map as Map
 import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Control.Monad.State
-import           Data.Maybe (fromJust)
-import           Data.Either (fromRight)
+import Compile.GraphColoring
 
-type Var = Integer
+type Var = Opnd
 type Line = Integer
 
 data LivenessState = LivenessState
@@ -32,9 +31,6 @@ addDef l v = \s -> s { def = Map.insertWith Set.union l (Set.singleton v) (def s
 addUse :: Line -> Var -> LivenessState -> LivenessState
 addUse l v = \s -> s { use = Map.insertWith Set.union l (Set.singleton v) (use s) }
 
-addLive :: Line -> Var -> LivenessState -> LivenessState
-addLive l v = \s -> s { live = Map.insertWith Set.union l (Set.singleton v) (live s) }
-
 type LivenessAnalysis a = State LivenessState a
 
 liveness :: X86 -> LivenessState
@@ -48,12 +44,12 @@ extractFacts instr = zipWithM_ processInstr instr [1..]
 processBinOp :: Opnd -> Opnd -> Line -> LivenessAnalysis ()
 processBinOp o1 o2 l = do
   case o1 of
-    VirtReg i -> do
-      modify $ addDef l i
-      modify $ addUse l i
+    v@(VirtReg _) -> do
+      modify $ addDef l v
+      modify $ addUse l v
     _         -> pure ()
   case o2 of
-    VirtReg i -> modify $ addUse l i
+    v@(VirtReg _) -> modify $ addUse l v
     _         -> pure ()
   modify $ addSucc l (l + 1)
 
@@ -61,10 +57,10 @@ processBinOp o1 o2 l = do
 processInstr :: Instr -> Line -> LivenessAnalysis ()
 processInstr (Mov o1 o2) l = do
   case o1 of
-    VirtReg i -> modify $ addDef l i
+    v@(VirtReg _) -> modify $ addDef l v
     _         -> pure ()
   case o2 of
-    VirtReg i -> modify $ addUse l i
+    v@(VirtReg _) -> modify $ addUse l v
     _         -> pure ()
   modify $ addSucc l (l + 1)
 processInstr (Add o1 o2) l = processBinOp o1 o2 l
@@ -72,14 +68,14 @@ processInstr (Sub o1 o2) l = processBinOp o1 o2 l
 processInstr (Imul o1 o2) l = processBinOp o1 o2 l
 processInstr (Idiv o) l = do
   case o of
-    VirtReg i -> modify $ addUse l i
+    v@(VirtReg _) -> modify $ addUse l v
     _         -> pure ()
   modify $ addSucc l (l + 1)
 processInstr (Neg o) l = do
   case o of
-    VirtReg i -> do
-      modify $ addUse l i
-      modify $ addDef l i
+    v@(VirtReg _) -> do
+      modify $ addUse l v
+      modify $ addDef l v
     _         -> pure ()
   modify $ addSucc l (l + 1)
 processInstr (Ret) _ = pure ()
@@ -94,8 +90,8 @@ livenessAnalysis = do
 livenessStep :: LivenessAnalysis Bool
 livenessStep = do
   st <- get
-  let lines = Map.keys (use st)
-  foldM updateLine False lines
+  let ls = Map.keys (use st)
+  foldM updateLine False ls
   
 updateLine :: Bool -> Line -> LivenessAnalysis Bool
 updateLine acc l = do
@@ -122,10 +118,15 @@ find k m = Map.findWithDefault Set.empty k m
 
 livenessGraph :: LivenessState -> Map Var (Set Var)
 livenessGraph ls =
-  Map.unionsWith Set.union $
+  let
+    livePairs =
       [ interferencePairs vars
       | vars <- Map.elems (live ls)
       ]
+    
+    allVars = Set.unions (Map.elems (use ls) ++ Map.elems (def ls))
+    allNodes = Map.fromSet (const Set.empty) allVars
+  in Map.unionWith Set.union allNodes (Map.unionsWith Set.union livePairs)
     where
       interferencePairs :: Set Var -> Map Var (Set Var)
       interferencePairs vars =
@@ -135,20 +136,3 @@ livenessGraph ls =
           , v2 <- Set.toList vars
           , v1 /= v2
           ]
-  
-example_live :: X86
-example_live = [
-  Mov (VirtReg 1) (Imm "1"),
-  Mov (VirtReg 2) (VirtReg 1),
-  Add (VirtReg 2) (VirtReg 1),
-  Mov (VirtReg 3) (VirtReg 2),
-  Add (VirtReg 3) (VirtReg 2),
-  Mov (VirtReg 4) (VirtReg 1),
-  Add (VirtReg 4) (VirtReg 2),
-  Mov (VirtReg 5) (VirtReg 4),
-  Add (VirtReg 5) (VirtReg 3),
-  Mov (Reg RAX) (VirtReg 5),
-  Ret
-  ]
-  
-

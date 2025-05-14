@@ -1,8 +1,10 @@
 module Compile.RegAlloc
-  ( regAlloc, naiveStrategy
+  ( regAlloc, naiveStrategy, coloringStrategy
   ) where
 
 import           Compile.X86
+import           Compile.Liveness
+import           Compile.GraphColoring
 
 import           Control.Monad.State
 import           Data.Map (Map)
@@ -86,6 +88,9 @@ regAlloc instrs strategy = reserveStack stackUsed (code finalState)
     stackUsed = maximum . map (abs . getOffset . snd) . Map.toList $ strategy
     getOffset (Mem _ offset) = offset
     getOffset _ = 0
+    
+coloringStrategy :: X86 -> RegAlloc
+coloringStrategy instrs = colorGraph registers (livenessGraph (liveness instrs))
 
 reserveStack :: Integer -> X86 -> X86
 reserveStack s instr = allocStack s ++ reserveStack' s instr
