@@ -3,9 +3,10 @@ module Compile
   , compile
   ) where
 
-import Compile.AAsm (codeGen)
+import Compile.Asm (codeGen)
 import Compile.Parser (parseAST)
 import Compile.Semantic (semanticAnalysis)
+import Compile.X86 (printX86)
 import Error (L1ExceptT)
 
 import Control.Monad.IO.Class
@@ -20,5 +21,5 @@ compile job = do
   ast <- parseAST $ src job
   semanticAnalysis ast
   let code = codeGen ast
-  liftIO $ writeFile (out job) (unlines code)
+  liftIO $ writeFile (out job) (printX86 code)
   return ()

@@ -32,7 +32,12 @@ executable l1c
                   Compile.AST,
                   Compile.Parser,
                   Compile.Semantic,
-                  Compile.AAsm,
+                  Compile.Asm,
+                  Compile.X86,
+                  Compile.IR,
+                  Compile.RegAlloc,
+                  Compile.Liveness,
+                  Compile.GraphColoring,
                   Error
     hs-source-dirs:   app
     default-language: Haskell2010
