@@ -22,7 +22,7 @@ data Opnd
   | Mem Reg Integer
   deriving (Eq, Ord)
 
-data Reg = RAX | RBX | RCX | RDX | RSP | RBP | RSI | RDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
+data Reg = EAX | EBX | ECX | EDX | RSP | RBP | ESI | EDI | R8 | R9 | R10 | R11 | R12 | R13 | R14 | R15
   deriving (Eq, Ord)
 
 registers :: [Opnd]
@@ -81,14 +81,14 @@ instance Show Opnd where
                     else "[" ++ show r ++ " - " ++ show (abs i) ++ "]"
 
 instance Show Reg where
-  show RAX = "eax"
-  show RBX = "ebx"
-  show RCX = "ecx"
-  show RDX = "edx"
+  show EAX = "eax"
+  show EBX = "ebx"
+  show ECX = "ecx"
+  show EDX = "edx"
   show RSP = "rsp"
   show RBP = "rbp"
-  show RSI = "esi"
-  show RDI = "edi"
+  show ESI = "esi"
+  show EDI = "edi"
   show R8  = "r8d"
   show R9  = "r9d"
   show R10 = "r10d"
