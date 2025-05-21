@@ -1,8 +1,11 @@
 module Compile.AST
   ( AST(..)
+  , Block(..)
   , Stmt(..)
   , Expr(..)
-  , Op(..)
+  , BinOp(..)
+  , UnOp(..)
+  , Type(..)
   , showAsgnOp
   , posPretty
   ) where
@@ -10,10 +13,11 @@ module Compile.AST
 import Data.List (intercalate)
 import Text.Megaparsec
 
-data AST = Program Block
+newtype AST = Program Block
   deriving (Eq, Show)
 
 data Block = Block [Stmt] SourcePos
+  deriving (Eq)
 
 data Stmt
   -- Simple Statement
@@ -28,11 +32,11 @@ data Stmt
   | Break SourcePos
   | Continue SourcePos
   -- Block Statement
-  | InnerBlock Block
-  deriving (Eq, Show)
+  | InnerBlock Block SourcePos
+  deriving (Eq)
   
 data Type = TInt | TBool
-  deriving (Eq, Show)
+  deriving (Eq)
 
 data Expr
   = BoolLit Bool SourcePos
@@ -41,7 +45,7 @@ data Expr
   | UnExpr UnOp Expr
   | BinExpr BinOp Expr Expr
   | Ternary Expr Expr Expr
-  deriving (Eq, Show)
+  deriving (Eq)
   
 -- Nothing means =, Just is for +=, %=, ...
 type AsgnOp = Maybe BinOp
@@ -53,9 +57,11 @@ data BinOp
   | And | Or
   | BitAnd | BitOr | BitXor
   | Shl | Shr
+  deriving (Eq)
   
 data UnOp
   = Neg | Not | BitNot
+  deriving (Eq)
 
 -- re-exported for convenience
 posPretty :: SourcePos -> String
@@ -68,22 +74,18 @@ instance Show Block where
 
 instance Show Stmt where
   show (Decl ty name _) = "Decl: " ++ show ty ++ " " ++ name
-    show (Init ty name e _) = "Init: " ++ show ty ++ " " ++ name ++ " = " ++ show e
-    show (Asgn name op e _) =
-      "Assign: " ++ name ++ showAsgnOp op ++ show e
-    show (Ret e _) = "Return: " ++ show e
-    show (If cond thn els _) =
-      "If (" ++ show cond ++ ") " ++ show thn ++ maybe "" ((" Else " ++) . show) els
-    show (While cond body _) =
-      "While (" ++ show cond ++ ") " ++ show body
-    show (For mInit cond mStep body _) =
-      "For (" ++ showOpt mInit ++ "; " ++ show cond ++ "; " ++ showOpt mStep ++ ") " ++ show body
-      where
-        showOpt (Just s) = show s
-        showOpt Nothing  = ""
-    show (Break _) = "Break"
-    show (Continue _) = "Continue"
-    show (InnerBlock blk) = show blk
+  show (Init ty name e _) = "Init: " ++ show ty ++ " " ++ name ++ " = " ++ show e
+  show (Asgn name op e _) = "Assign: " ++ name ++ showAsgnOp op ++ show e
+  show (Ret e _) = "Return: " ++ show e
+  show (If cond thn els _) = "If (" ++ show cond ++ ") " ++ show thn ++ maybe "" ((" Else " ++) . show) els
+  show (While cond body _) = "While (" ++ show cond ++ ") " ++ show body
+  show (For mInit cond mStep body _) = "For (" ++ showOpt mInit ++ "; " ++ show cond ++ "; " ++ showOpt mStep ++ ") " ++ show body
+    where
+      showOpt (Just s) = show s
+      showOpt Nothing = ""
+  show (Break _) = "Break"
+  show (Continue _) = "Continue"
+  show (InnerBlock blk _) = show blk
 
 instance Show Expr where
   show (BoolLit True _) = "true"
@@ -118,6 +120,10 @@ instance Show UnOp where
   show Neg    = "-"
   show Not    = "!"
   show BitNot = "~"
+  
+instance Show Type where
+  show TInt = "int"
+  show TBool = "bool"
   
 showAsgnOp :: AsgnOp -> String
 showAsgnOp (Just op) = " " ++ show op ++ "= "
