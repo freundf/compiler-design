@@ -7,6 +7,7 @@ import Compile.Asm (codeGen)
 import Compile.Parser (parseAST)
 import Compile.Semantic (semanticAnalysis)
 import Compile.X86 (printX86)
+import Compile.IR (irTranslate)
 import Error (L1ExceptT)
 
 import Control.Monad.IO.Class
@@ -20,6 +21,7 @@ compile :: Job -> L1ExceptT ()
 compile job = do
   ast <- parseAST $ src job
   semanticAnalysis ast
-  let code = codeGen ast
+  let ir = irTranslate "main" ast
+  let code = codeGen ir
   liftIO $ writeFile (out job) (printX86 code)
   return ()

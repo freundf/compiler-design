@@ -1,150 +1,202 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 module Compile.IR
-  ( genIR
-  , Function
-  , BlockID
-  , NodeID
-  , BasicBlock
-  , Node
-  , NodeKind(..)
-  , IRGraph
+  ( IRGraph(..),
+    Block,
+    Node(..),
+    NodeId,
+    Op(..),
+    topoSort,
+    irTranslate
   ) where
   
-import           Compile.AST (AST, Op)
+import           Compile.AST (AST)
 import qualified Compile.AST as AST
 
 import           Control.Monad.State
-import           Data.IntMap.Strict (IntMap)
-import qualified Data.IntMap.Strict as IntMap
-import           Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
+import           Control.Monad (mapM_, when)
+import           Data.Map (Map)
+import qualified Data.Map as Map
+import           Data.Set (Set)
+import qualified Data.Set as Set
+import           Data.IntMap (IntMap)
+import qualified Data.IntMap as IntMap
+import           Data.IntSet (IntSet)
+import qualified Data.IntSet as IntSet
+import           Data.Maybe (maybeToList)
 
-type NodeID = Int
-type BlockID = Int
+import           Text.Megaparsec (SourcePos(..))
+import           Text.Megaparsec.Pos (pos1)
 
-data Function = Function
-  { entryBlock  :: BlockID
-  , blocks      :: IntMap BasicBlock
-  , graph       :: IRGraph
-  }
-  deriving (Show)
-  
-data BasicBlock = BasicBlock
-  { blockId     :: BlockID
-  , phiNodes    :: [Node]
-  , bodyNodes   :: [Node]
-  , terminator  :: Node
-  }
-  deriving (Show)
-  
-data Node = Node
-  { nodeId :: NodeID
-  , nodeKind :: NodeKind
-  }
-  deriving (Show)
-  
-data NodeKind
-  = IntConst Integer
-  | Param String
-  | UnOp Op NodeID
-  | BinOp Op NodeID NodeID
-  | Phi [(BlockID, NodeID)]
-  | Return NodeID
-  | Start
-  deriving (Show)
-  
-  
-type IRGraph = IntMap Node
 
-  
-data IRState = IRState
-  { nextId  :: Int
-  , irGraph   :: IRGraph
-  , irBlocks  :: IntMap BasicBlock
-  , current :: BlockID
-  , varEnv  :: Map String NodeID
-  }
-  
-type IRGen = State IRState
+type NodeId = Int
+type BlockId = Int
 
-initialState :: IRState
-initialState = IRState
-  { nextId = 1
-  , irGraph = IntMap.empty
-  , irBlocks = IntMap.singleton 0 (BasicBlock 0 [] [] (Node 0 Start))
-  , current = 0
-  , varEnv = Map.empty
+data Block = Block
+  { name :: String
+  , bid :: BlockId
+  } deriving (Eq, Show)
+
+data Node
+  = Start { nid :: NodeId, block :: Block }
+  | Return { nid :: NodeId, expr :: NodeId, sideEffect :: Maybe NodeId, block :: Block }
+  | Const { nid :: NodeId, value :: ConstVal, block :: Block }
+  | BinaryOp { nid :: NodeId, op :: Op, left :: NodeId, right :: NodeId, sideEffect :: Maybe NodeId, block :: Block }
+  | UnaryOp { nid :: NodeId, op :: Op, expr :: NodeId, block :: Block }
+  deriving (Eq, Show)
+  
+data Op
+  = Mul
+  | Add
+  | Sub
+  | Div
+  | Mod
+  | Neg
+  deriving (Eq, Show)
+  
+type ConstVal = String
+
+data TranslationState = TranslationState
+  { currentBlock :: Block
+  , nextNodeId :: NodeId
+  , successors :: IntMap IntSet
+  , nodes :: IntMap Node
+  , returns :: IntSet
+  , currentSideEffect :: NodeId
+  , varMapping :: Map String Node
   }
 
-buildGraph :: IRGen () -> Function
-buildGraph m = Function
-  { entryBlock  = 0
-  , blocks      = irBlocks endState
-  , graph       = irGraph endState
-  }
+type IRTranslation a = State TranslationState a
+
+data IRGraph = IRGraph
+  { irSuccessors :: IntMap IntSet
+  , irNodes :: IntMap Node
+  , irEntry :: NodeId
+  , irReturns :: IntSet
+  } deriving (Eq, Show)
+
+irTranslate :: String -> AST -> IRGraph
+irTranslate name ast = IRGraph (successors finalState) (nodes finalState) (nid initNode) (returns finalState)
   where
-    endState = execState m initialState
+    irTranslation = translateAst ast
+    initBlock = Block name 0
+    initNode = Start 0 initBlock
+    initialState = TranslationState initBlock 1 IntMap.empty (IntMap.singleton 0 initNode) IntSet.empty 0 Map.empty
+    finalState = execState irTranslation initialState
     
-    
-freshId :: IRGen NodeID
+freshId :: IRTranslation NodeId
 freshId = do
-  n <- gets nextId
-  modify $ \s -> s { nextId = n + 1 }
-  pure n
+  newId <- gets nextNodeId
+  modify $ \s -> s { nextNodeId = newId + 1 }
+  pure newId
   
+addSucc :: Node -> Node -> IRTranslation ()
+addSucc from to = modify $ \s -> s
+  { successors = IntMap.insertWith IntSet.union (nid from) (IntSet.singleton (nid to)) (successors s) }
 
-emit :: NodeKind -> IRGen NodeID
-emit kind = do
-  nid <- freshId
-  let node = Node nid kind
-  modify $ \s -> s { irGraph = IntMap.insert nid node (irGraph s)}
-  bid <- gets current
-  modify $ \s ->
-    let basicBlock = (irBlocks s) IntMap.! bid
-        basicBlock' = basicBlock { bodyNodes = bodyNodes basicBlock ++ [node] }
-    in s { irBlocks = IntMap.insert bid basicBlock' (irBlocks s)}
-  pure nid
+addNode :: Node -> IRTranslation ()
+addNode n = modify $ \s -> s { nodes = IntMap.insert (nid n) n (nodes s) }
 
+mapVar :: String -> Node -> IRTranslation ()
+mapVar ident node = modify $ \s -> s { varMapping = Map.insert ident node (varMapping s) }
+
+translateAst :: AST -> IRTranslation ()
+translateAst (AST.Block stmts _) = mapM_ translateStmt stmts
     
-translateStmt :: AST.Stmt -> IRGen ()
-translateStmt (AST.Decl name _) = translateStmt (AST.Init name (AST.IntExpr "0" undefined) undefined)
-translateStmt (AST.Init name expr _) = do
-  e <- translateExpr expr
-  modify $ \s -> s { varEnv = Map.insert name e (varEnv s)}
-translateStmt (AST.Asgn name op expr _) = do
-  rhs <- translateExpr expr
-  env <- gets varEnv
-  let old = Map.findWithDefault (error "assign to undeclared") name env
-  newVal <- case op of
-    Nothing -> pure rhs
-    Just binop -> emit (BinOp binop old rhs)
-  modify $ \s -> s { varEnv = Map.insert name newVal (varEnv s)}
+translateStmt :: AST.Stmt -> IRTranslation ()
+translateStmt (AST.Decl _ _) = pure ()
+translateStmt (AST.Init ident expr _) = translateAsgn ident expr
+translateStmt (AST.Asgn ident Nothing expr _) = translateAsgn ident expr
+translateStmt (AST.Asgn ident (Just op) expr sp) = translateAsgn ident (AST.BinExpr op (AST.Ident ident sp) expr)
 translateStmt (AST.Ret expr _) = do
   e <- translateExpr expr
-  nid <- freshId
-  let retNode = Node nid (Return e)
-  modify $ \s -> s { irGraph = IntMap.insert nid retNode (irGraph s)}
-  bid <- gets current
-  modify $ \s ->
-    let basicBlock = (irBlocks s) IntMap.! bid
-        basicBlock' = basicBlock { terminator = retNode }
-    in s { irBlocks = IntMap.insert bid basicBlock' (irBlocks s)}
+  n <- freshId
+  blk <- gets currentBlock
+  sideEffect <- gets currentSideEffect
+  let ret = Return n (nid e) (Just sideEffect) blk
+  modify $ \s -> s { returns = IntSet.insert n (returns s)}
+  addSucc e ret
+  addNode ret
   
-  
-translateExpr :: AST.Expr -> IRGen NodeID
-translateExpr (AST.IntExpr i _) = emit (IntConst (read i))
-translateExpr (AST.Ident v _) = do
-  env <- gets varEnv
-  case Map.lookup v env of
-    Just vid -> pure vid
-    Nothing -> error $ "variable not declared: " ++ v
-translateExpr (AST.UnExpr op expr) = do
+translateAsgn :: String -> AST.Expr -> IRTranslation ()
+translateAsgn ident expr = do
   e <- translateExpr expr
-  emit (UnOp op e)
+  mapVar ident e
+
+translateExpr :: AST.Expr -> IRTranslation Node
+translateExpr (AST.IntExpr i _) = do
+  n <- freshId
+  blk <- gets currentBlock
+  let node = Const n i blk
+  addNode node
+  pure node
+translateExpr (AST.Ident ident _) = gets ((Map.! ident) . varMapping)
+translateExpr (AST.UnExpr op expr) = do
+  i <- freshId
+  e <- translateExpr expr
+  blk <- gets currentBlock
+  let unOp = translateOp op
+      node = UnaryOp i unOp (nid e) blk
+  addSucc e node
+  addNode node
+  pure node
 translateExpr (AST.BinExpr op expr1 expr2) = do
+  i <- freshId
   e1 <- translateExpr expr1
   e2 <- translateExpr expr2
-  emit (BinOp op e1 e2)
+  blk <- gets currentBlock
+  curSideEffect <- gets currentSideEffect
+  let binOp = translateOp op
+      sideEffect = if hasSideEffect binOp then Just curSideEffect else Nothing
+      node = BinaryOp i binOp (nid e1) (nid e2) sideEffect blk
+  addSucc e1 node
+  addSucc e2 node
+  addNode node
+  when (hasSideEffect binOp) $ setSideEffect i
+  pure node
+  
+setSideEffect :: NodeId -> IRTranslation ()
+setSideEffect n = modify $ \s -> s { currentSideEffect = n }
+
+hasSideEffect :: Op -> Bool
+hasSideEffect op = case op of
+  Div -> True
+  Mod -> True
+  _   -> False
+
+translateOp :: AST.Op -> Op
+translateOp op = case op of
+  AST.Mul -> Mul
+  AST.Add -> Add
+  AST.Sub -> Sub
+  AST.Div -> Div
+  AST.Neg -> Neg
+  AST.Mod -> Mod
+  _ -> error ("unknown operator: " ++ show op)
 
 
-genIR :: AST -> Function
-genIR (AST.Block stmts _) = buildGraph $ mapM_ translateStmt stmts
+topoSort :: IRGraph -> [NodeId]
+topoSort graph = reverse finalOrder
+  where
+    (_, finalOrder) = foldl visit (Set.empty, []) (IntSet.toList (irReturns graph))
+    
+    visit (vis, ord) nid
+      | nid `Set.member` vis  = (vis, ord)
+      | otherwise             = dfs vis ord nid
+      
+    dfs vis ord nid = (newVis, nid : newOrd)
+      where
+        vis' = Set.insert nid vis
+        node = (irNodes graph) IntMap.! nid
+        
+        preds = case node of
+          (Start _ _)           -> []
+          (Return _ e s _)        -> e : maybeToList s
+          (Const _ _ _)         -> []
+          (BinaryOp _ _ l r s _)  -> l : r : maybeToList s
+          (UnaryOp _ _ e _)     -> [e]
+        
+        (newVis, newOrd) = foldl processPred (vis', ord) preds
+        
+        processPred (v, o) pid
+          | pid `Set.member` v  = (v, o)
+          | otherwise           = dfs v o pid

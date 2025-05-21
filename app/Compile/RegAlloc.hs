@@ -36,11 +36,11 @@ processInstr (Mov o1 o2) = do
   let r2 = getReg o2 regs
   case (r1, r2) of
     (Mem _ _, Mem _ _) -> do
-      emit $ Mov (Reg RCX) r2
-      emit $ Mov r1 (Reg RCX)
+      emit $ Mov (Reg ECX) r2
+      emit $ Mov r1 (Reg ECX)
     (Mem _ _, Imm _) -> do
-      emit $ Mov (Reg RCX) r2
-      emit $ Mov r1 (Reg RCX)
+      emit $ Mov (Reg ECX) r2
+      emit $ Mov r1 (Reg ECX)
     _ -> emit $ Mov r1 r2
 processInstr (Add o1 o2) = processBinOp Add o1 o2
 processInstr (Sub o1 o2) = processBinOp Sub o1 o2
@@ -50,17 +50,17 @@ processInstr (Idiv o) = do
     let r = getReg o regs
     case r of
       (Mem _ _) -> do
-        emit $ Mov (Reg RCX) r
-        emit $ Idiv (Reg RCX)
+        emit $ Mov (Reg ECX) r
+        emit $ Idiv (Reg ECX)
       _ -> emit $ Idiv r
 processInstr (Neg o) = do
     regs <- gets regMap
     let r = getReg o regs
     case r of
       (Mem _ _) -> do
-        emit $ Mov (Reg RCX) r
-        emit $ Neg (Reg RCX)
-        emit $ Mov r (Reg RCX)
+        emit $ Mov (Reg ECX) r
+        emit $ Neg (Reg ECX)
+        emit $ Mov r (Reg ECX)
       _ -> emit (Neg r)
 processInstr instr = emit instr
 
@@ -71,9 +71,9 @@ processBinOp instr o1 o2 = do
     let r2 = getReg o2 regs
     case (r1, r2) of
       (Mem _ _, _) -> do
-        emit $ Mov (Reg RCX) r1
-        emit $ instr (Reg RCX) r2
-        emit $ Mov r1 (Reg RCX)
+        emit $ Mov (Reg ECX) r1
+        emit $ instr (Reg ECX) r2
+        emit $ Mov r1 (Reg ECX)
       _ -> emit $ instr r1 r2
 
 
