@@ -3,20 +3,20 @@ module Compile.Parser
     parseNumber
   ) where
 
-import           Compile.AST (AST(..), Expr(..), Op(..), Stmt(..))
-import           Error (L1ExceptT, parserFail)
+import           Compile.AST (AST(..), Block(..), Stmt(..), Expr(..), BinOp(..), UnOp(..), Type(..))
+import           Compile.Lexer
+import           Error --(L1ExceptT, parserFail)
 
 import           Control.Monad.Combinators.Expr
 import           Control.Monad.IO.Class (liftIO)
 import           Data.Functor (void)
 import           Data.Void (Void)
-import           Data.Int (Int32)
-import           Data.Char (isAscii, isAsciiLower, isAsciiUpper, isDigit)
-import           Numeric (showHex)
+import           Data.Maybe (fromMaybe)
 
 import           Text.Megaparsec
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer as L
+
 
 parseAST :: FilePath -> L1ExceptT AST
 parseAST path = do
@@ -40,47 +40,124 @@ astParser = do
   reserved "int"
   reserved "main"
   parens $ pure ()
-  mainBlock <- braces $ do
-    pos <- getSourcePos
-    stmts <- many stmt
-    return $ Block stmts pos
+  mainBlock <- block
   eof
-  return mainBlock
+  return $ Program mainBlock
+
+block :: Parser Block
+block = do
+  pos <- getSourcePos
+  stmts <- braces $ many stmt
+  return $ Block stmts pos
+
+innerBlock :: Parser Stmt
+innerBlock = do
+  pos <- getSourcePos
+  blk <- block
+  return $ InnerBlock blk pos
 
 stmt :: Parser Stmt
-stmt = do
-  s <- try decl <|> try simp <|> ret
+stmt = try simp <|> try control <|> innerBlock
+
+control :: Parser Stmt
+control = try cIf <|> try cWhile <|> try cFor <|> try cContinue <|> try cBreak <|> ret
+
+cWhile :: Parser Stmt
+cWhile = do
+  pos <- getSourcePos
+  reserved "while"
+  cond <- parens expr
+  body <- stmt
+  return $ While cond body pos
+
+cFor :: Parser Stmt
+cFor = do
+  pos <- getSourcePos
+  reserved "for"
+  (fInit, cond, step) <- parens $ do
+    fInit <- optional simp
+    semi
+    cond <- expr
+    semi
+    step <- optional simp
+    return (fInit, cond, step)
+  body <- stmt
+  return $ For fInit cond step body pos
+
+cIf :: Parser Stmt
+cIf = do
+  pos <- getSourcePos
+  reserved "if"
+  cond <- parens expr
+  body <- stmt
+  elseBody <- optional cElse
+  return $ If cond body elseBody pos
+
+cElse :: Parser Stmt
+cElse = do
+  reserved "else"
+  stmt
+
+cContinue :: Parser Stmt
+cContinue = do
+  pos <- getSourcePos
+  s <- reserved "continue"
   semi
-  return s
+  return $ Continue pos
+
+cBreak :: Parser Stmt
+cBreak = do
+  pos <- getSourcePos
+  s <- reserved "break"
+  semi
+  return $ Break pos
 
 decl :: Parser Stmt
 decl = try declInit <|> declNoInit
 
+mapType :: String -> Parser Type
+mapType "int" = pure TInt
+mapType "bool" = pure TBool
+mapType t = fail $ "unknown type " ++ t
+
 declNoInit :: Parser Stmt
 declNoInit = do
   pos <- getSourcePos
-  reserved "int"
+  dType <- (string "int" <* notFollowedBy identLetter)
+       <|> (string "bool" <* notFollowedBy identLetter)
+  sc
+  t <- mapType dType
   name <- identifier
-  return $ Decl name pos
+  
+  return $ Decl t name pos
 
 declInit :: Parser Stmt
 declInit = do
   pos <- getSourcePos
-  reserved "int"
+  dType <- (string "int" <* notFollowedBy identLetter)
+       <|> (string "bool" <* notFollowedBy identLetter)
+  sc
+  t <- mapType dType
   name <- identifier
   void $ symbol "="
   e <- expr
-  return $ Init name e pos
+  return $ Init t name e pos
 
 simp :: Parser Stmt
 simp = do
+  s <- try asgn <|> decl
+  semi
+  return s
+
+asgn :: Parser Stmt
+asgn = do
   pos <- getSourcePos
   name <- lvalue
   op <- asnOp
   e <- expr
   return $ Asgn name op e pos
 
-asnOp :: Parser (Maybe Op)
+asnOp :: Parser (Maybe BinOp)
 asnOp = do
   op <- operator
   case op of
@@ -89,6 +166,11 @@ asnOp = do
     "-=" -> pure (Just Sub)
     "/=" -> pure (Just Div)
     "%=" -> pure (Just Mod)
+    "&=" -> pure (Just BitAnd)
+    "|=" -> pure (Just BitOr)
+    "^=" -> pure (Just BitXor)
+    "<<=" -> pure (Just Shl)
+    ">>=" -> pure (Just Shr)
     "=" -> pure Nothing
     x -> fail $ "Nonexistent assignment operator: " ++ x
   <?> "assignment operator"
@@ -98,10 +180,17 @@ ret = do
   pos <- getSourcePos
   reserved "return"
   e <- expr
+  semi
   return $ Ret e pos
 
 expr' :: Parser Expr
-expr' = parens expr <|> intExpr <|> identExpr
+expr' = parens expr <|> boolLit <|> intExpr <|> identExpr
+
+boolLit :: Parser Expr
+boolLit = do
+  pos <- getSourcePos
+  b <- boolLiteral
+  return $ BoolLit b pos
 
 intExpr :: Parser Expr
 intExpr = do
@@ -122,137 +211,46 @@ opTable =
     , InfixL (BinExpr Div <$ symbol "/")
     , InfixL (BinExpr Mod <$ symbol "%")
     ]
-  , [InfixL (BinExpr Add <$ symbol "+"), InfixL (BinExpr Sub <$ symbol "-")]
+  , [ InfixL (BinExpr Add <$ symbol "+")
+    , InfixL (BinExpr Sub <$ symbol "-")
+    ]
+  , [ InfixL (BinExpr Shl <$ symbol "<<")
+    , InfixL (BinExpr Shr <$ symbol ">>")
+    ]
+  , [ InfixL (BinExpr Leq <$ symbol "<=")
+    , InfixL (BinExpr Lt  <$ symbol "<")
+    , InfixL (BinExpr Geq <$ symbol ">=")
+    , InfixL (BinExpr Gt  <$ symbol ">")
+    ]
+  , [ InfixL (BinExpr Eq  <$ symbol "==")
+    , InfixL (BinExpr Neq <$ symbol "!=")
+    ]
+  , [ InfixL (BinExpr BitAnd <$ try (symbol "&" <* notFollowedBy (char '&'))) ]
+  , [ InfixL (BinExpr BitXor <$ symbol "^") ]
+  , [ InfixL (BinExpr BitOr  <$ try (symbol "|" <* notFollowedBy (char '|'))) ]
+  , [ InfixL (BinExpr And    <$ symbol "&&") ]
+  , [ InfixL (BinExpr Or     <$ symbol "||") ]
   ]
   where
     -- this allows us to parse `---x` as `-(-(-x))`
     -- makeExprParser doesn't do this by default
-    manyUnaryOp = foldr1 (.) <$> some (UnExpr Neg <$ symbol "-")
+    manyUnaryOp = foldr1 (.) <$> some unaryOp
+
+unaryOp :: Parser (Expr -> Expr)
+unaryOp = (UnExpr Neg <$ symbol "-")
+        <|> (UnExpr Not <$ symbol "!")
+        <|> (UnExpr BitNot <$ symbol "~")
 
 expr :: Parser Expr
-expr = makeExprParser expr' opTable <?> "expression"
-
--- Lexer starts here, probably worth moving to its own file at some point
-sc :: Parser ()
-sc = L.space l1Space1 lineComment blockComment
-  where
-    lineComment = L.skipLineComment "//"
-    blockComment = L.skipBlockCommentNested "/*" "*/"
-    
-isL1Whitespace :: Char -> Bool
-isL1Whitespace c = c == ' ' || c == '\t' || c == '\r' || c == '\n'
-
-l1Space1 :: Parser ()
-l1Space1 = void $ some (satisfy isL1Whitespace <?> "whitespace")
-
-lexeme :: Parser a -> Parser a
-lexeme = L.lexeme sc
-
-symbol :: String -> Parser String
-symbol = L.symbol sc
-
-parens :: Parser a -> Parser a
-parens = between (symbol "(") (symbol ")")
-
-braces :: Parser a -> Parser a
-braces = between (symbol "{") (symbol "}")
-
-semi :: Parser ()
-semi = void $ symbol ";"
-
-numberLiteral :: Parser String
-numberLiteral = lexeme (try hexLiteral <|> decLiteral <?> "number")
-
--- We want to reject leading zeroes, but `0` itself should of course be accepted
-decLiteral :: Parser String
-decLiteral = string "0" <|> (:) <$> oneOf ['1'..'9'] <*> many digitChar
-
-hexLiteral :: Parser String
-hexLiteral = do
-  void $ string' "0x"
-  digits <- some hexDigitChar
-  return ("0x" ++ digits)
-
-number :: Parser Integer
-number = try hexadecimal <|> decimal <?> "number"
-
-decimal :: Parser Integer
-decimal = do
-  n <- lexeme L.decimal
-  notFollowedBy alphaNumChar
-  if n < maxInt
-    then return n
-    else if n == maxInt
-           then return (-maxInt)
-           else fail $ "Decimal literal out of bounds: " ++ show n
-  where maxInt = 2^(31 :: Integer)
-
-hexadecimal :: Parser Integer
-hexadecimal = do
-  void $ string' "0x"
-  n <- lexeme L.hexadecimal
-  if n > maxHex
-    then fail $ "Hexadecimal literal out of bounds: " ++ "0x" ++ showHex n ""
-    else return $ toInteger ((fromInteger n) :: Int32)
-  where maxHex = 0xFFFFFFFF
-
-reserved :: String -> Parser ()
-reserved w = void $ lexeme $ (string w <* notFollowedBy identLetter)
-
-reservedWords :: [String]
-reservedWords =
-  [ "alloc"
-  , "alloc_array"
-  , "assert"
-  , "bool"
-  , "break"
-  , "char"
-  , "continue"
-  , "else"
-  , "false"
-  , "for"
-  , "if"
-  , "int"
-  , "NULL"
-  , "print"
-  , "read"
-  , "return"
-  , "string"
-  , "struct"
-  , "true"
-  , "void"
-  , "while"
-  ]
-
--- Operations
-opStart :: Parser Char
-opStart = oneOf "=+-*/%&^|<>!~"
-
-opLetter :: Parser Char
-opLetter = oneOf "=&|<>"
-
-operator :: Parser String
-operator = lexeme ((:) <$> opStart <*> many opLetter)
-
--- Identifiers
-identStart :: Parser Char
-identStart = satisfy isIdentStart
-  where
-    isIdentStart c = isAscii c && (isAsciiUpper c || isAsciiLower c || c == '_')
-
-identLetter :: Parser Char
-identLetter = satisfy isIdentLetter
-  where
-    isIdentLetter c = isAscii c && (isAsciiUpper c || isAsciiLower c || isDigit c || c == '_')
-
-identifier :: Parser String
-identifier = (lexeme . try) (p >>= check)
-  where
-    p = (:) <$> identStart <*> many identLetter
-    check x =
-      if x `elem` reservedWords
-        then fail (x ++ " is reserved")
-        else return x
-
-lvalue :: Parser String
-lvalue = try identifier <|> parens lvalue <?> "lvalue"
+expr = do
+  e <- makeExprParser expr' opTable <?> "expression"
+  tern <- optional (ternary e)
+  return $ fromMaybe e tern
+  
+ternary :: Expr -> Parser Expr
+ternary cond = try $ do
+  _ <- symbol "?"
+  th <- expr
+  _ <- symbol ":"
+  el <- expr
+  return $ Ternary cond th el
