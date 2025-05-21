@@ -1,5 +1,5 @@
 {-# LANGUAGE DuplicateRecordFields #-}
-module Compile.IR
+module Compile.IR.IR
   ( IRGraph(..),
     Block,
     Node(..),
@@ -9,8 +9,8 @@ module Compile.IR
     irTranslate
   ) where
   
-import           Compile.AST (AST)
-import qualified Compile.AST as AST
+import           Compile.Frontend.AST (AST)
+import qualified Compile.Frontend.AST as AST
 
 import           Control.Monad.State
 import           Control.Monad (mapM_, when)
@@ -100,11 +100,11 @@ mapVar :: String -> Node -> IRTranslation ()
 mapVar ident node = modify $ \s -> s { varMapping = Map.insert ident node (varMapping s) }
 
 translateAst :: AST -> IRTranslation ()
-translateAst (AST.Block stmts _) = mapM_ translateStmt stmts
+translateAst (AST.Program (AST.Block stmts _)) = mapM_ translateStmt stmts
     
 translateStmt :: AST.Stmt -> IRTranslation ()
-translateStmt (AST.Decl _ _) = pure ()
-translateStmt (AST.Init ident expr _) = translateAsgn ident expr
+translateStmt (AST.Decl _ _ _) = pure ()
+translateStmt (AST.Init ident expr _ _) = translateAsgn ident expr
 translateStmt (AST.Asgn ident Nothing expr _) = translateAsgn ident expr
 translateStmt (AST.Asgn ident (Just op) expr sp) = translateAsgn ident (AST.BinExpr op (AST.Ident ident sp) expr)
 translateStmt (AST.Ret expr _) = do
@@ -134,7 +134,7 @@ translateExpr (AST.UnExpr op expr) = do
   i <- freshId
   e <- translateExpr expr
   blk <- gets currentBlock
-  let unOp = translateOp op
+  let unOp = translateUnOp op
       node = UnaryOp i unOp (nid e) blk
   addSucc e node
   addNode node
@@ -145,7 +145,7 @@ translateExpr (AST.BinExpr op expr1 expr2) = do
   e2 <- translateExpr expr2
   blk <- gets currentBlock
   curSideEffect <- gets currentSideEffect
-  let binOp = translateOp op
+  let binOp = translateBinOp op
       sideEffect = if hasSideEffect binOp then Just curSideEffect else Nothing
       node = BinaryOp i binOp (nid e1) (nid e2) sideEffect blk
   addSucc e1 node
@@ -163,16 +163,19 @@ hasSideEffect op = case op of
   Mod -> True
   _   -> False
 
-translateOp :: AST.Op -> Op
-translateOp op = case op of
+translateBinOp :: AST.BinOp -> Op
+translateBinOp op = case op of
   AST.Mul -> Mul
   AST.Add -> Add
   AST.Sub -> Sub
   AST.Div -> Div
-  AST.Neg -> Neg
   AST.Mod -> Mod
-  _ -> error ("unknown operator: " ++ show op)
+  _ -> error ("unknown binary operator: " ++ show op)
 
+translateUnOp :: AST.UnOp -> Op
+translateUnOp op = case op of
+  AST.Neg -> Neg
+  _ -> error ("unknown unary operator: " ++ show op)
 
 topoSort :: IRGraph -> [NodeId]
 topoSort graph = reverse finalOrder

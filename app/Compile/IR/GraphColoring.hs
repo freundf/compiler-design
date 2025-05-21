@@ -1,4 +1,4 @@
-module Compile.GraphColoring
+module Compile.IR.GraphColoring
   ( colorGraph
   ) where
   

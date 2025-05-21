@@ -1,9 +1,9 @@
-module Compile.Semantic
+module Compile.Frontend.Semantic
   ( semanticAnalysis
   ) where
 
-import           Compile.AST (AST(..), Expr(..), Stmt(..), posPretty)
-import           Compile.Parser (parseNumber)
+import           Compile.Frontend.AST (AST(..), Expr(..), Stmt(..), posPretty)
+import           Compile.Frontend.Parser (parseNumber)
 import           Error (L1ExceptT, semanticFail)
 
 import           Control.Monad (unless, when)

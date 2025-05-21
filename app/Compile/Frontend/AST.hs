@@ -1,4 +1,4 @@
-module Compile.AST
+module Compile.Frontend.AST
   ( AST(..)
   , Block(..)
   , Stmt(..)

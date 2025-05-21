@@ -1,4 +1,4 @@
-module Compile.X86 where
+module Compile.Backend.X86 where
 
 type X86 = [Instr]
 

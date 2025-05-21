@@ -1,4 +1,4 @@
-module Compile.Lexer
+module Compile.Frontend.Lexer
   ( sc
   , symbol
   , parens

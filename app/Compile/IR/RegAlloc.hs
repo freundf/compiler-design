@@ -1,10 +1,10 @@
-module Compile.RegAlloc
+module Compile.IR.RegAlloc
   ( regAlloc, naiveStrategy, coloringStrategy
   ) where
 
-import           Compile.X86
-import           Compile.Liveness
-import           Compile.GraphColoring
+import           Compile.Backend.X86
+import           Compile.IR.Liveness
+import           Compile.IR.GraphColoring
 
 import           Control.Monad.State
 import           Data.Map (Map)

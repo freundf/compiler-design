@@ -1,11 +1,11 @@
-module Compile.Parser
+module Compile.Frontend.Parser
   ( parseAST,
     parseNumber
   ) where
 
-import           Compile.AST (AST(..), Block(..), Stmt(..), Expr(..), BinOp(..), UnOp(..), Type(..))
-import           Compile.Lexer
-import           Error --(L1ExceptT, parserFail)
+import           Compile.Frontend.AST (AST(..), Block(..), Stmt(..), Expr(..), BinOp(..), UnOp(..), Type(..))
+import           Compile.Frontend.Lexer
+import           Error (L1ExceptT, parserFail)
 
 import           Control.Monad.Combinators.Expr
 import           Control.Monad.IO.Class (liftIO)

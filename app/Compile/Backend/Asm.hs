@@ -1,11 +1,11 @@
-module Compile.Asm
+module Compile.Backend.Asm
   ( codeGen
   ) where
   
-import           Compile.X86
-import           Compile.IR (IRGraph(..), Node(..), NodeId, topoSort)
-import qualified Compile.IR as IR
-import           Compile.RegAlloc (regAlloc, coloringStrategy, naiveStrategy)
+import           Compile.Backend.X86
+import           Compile.IR.IR (IRGraph(..), Node(..), NodeId, topoSort)
+import qualified Compile.IR.IR as IR
+import           Compile.IR.RegAlloc (regAlloc, coloringStrategy, naiveStrategy)
 
 import           Control.Monad.State
 import           Data.Map (Map)

@@ -1,8 +1,8 @@
-module Compile.Liveness
+module Compile.IR.Liveness
   ( liveness, livenessGraph
   ) where
 
-import           Compile.X86
+import           Compile.Backend.X86
 
 import           Prelude hiding (succ)
 import           Data.Map (Map)
