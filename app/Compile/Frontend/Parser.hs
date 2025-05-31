@@ -67,7 +67,7 @@ cWhile = do
   pos <- getSourcePos
   reserved "while"
   cond <- parens expr
-  body <- stmt
+  body <- many stmt
   return $ While cond body pos
 
 cFor :: Parser Stmt
@@ -81,7 +81,7 @@ cFor = do
     semi
     step <- optional simp
     return (fInit, cond, step)
-  body <- stmt
+  body <- many stmt
   return $ For fInit cond step body pos
 
 cIf :: Parser Stmt
@@ -89,14 +89,14 @@ cIf = do
   pos <- getSourcePos
   reserved "if"
   cond <- parens expr
-  body <- stmt
+  body <- many stmt
   elseBody <- optional cElse
   return $ If cond body elseBody pos
 
 cElse :: Parser Stmt
 cElse = do
   reserved "else"
-  stmt
+  many stmt
 
 cContinue :: Parser Stmt
 cContinue = do

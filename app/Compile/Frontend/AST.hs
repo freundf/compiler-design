@@ -7,13 +7,15 @@ module Compile.Frontend.AST
   , UnOp(..)
   , Type(..)
   , showAsgnOp
+  , unOpType
+  , binOpType
   , posPretty
   ) where
 
 import Data.List (intercalate)
 import Text.Megaparsec
 
-newtype AST = Program Block
+newtype AST = Function Block
   deriving (Eq, Show)
 
 data Block = Block [Stmt] SourcePos
@@ -26,17 +28,16 @@ data Stmt
   | Asgn String AsgnOp Expr SourcePos
   | Ret Expr SourcePos
   -- Control Statement
-  | While Expr Stmt SourcePos
-  | For (Maybe Stmt) Expr (Maybe Stmt) Stmt SourcePos
-  | If Expr Stmt (Maybe Stmt) SourcePos
+  | While Expr [Stmt] SourcePos
+  | For (Maybe Stmt) Expr (Maybe Stmt) [Stmt] SourcePos
+  | If Expr [Stmt] (Maybe [Stmt]) SourcePos
   | Break SourcePos
   | Continue SourcePos
   -- Block Statement
   | InnerBlock Block SourcePos
   deriving (Eq)
   
-data Type = TInt | TBool
-  deriving (Eq)
+data Type = TInt | TBool | TAny
 
 data Expr
   = BoolLit Bool SourcePos
@@ -129,3 +130,25 @@ showAsgnOp :: AsgnOp -> String
 showAsgnOp (Just op) = " " ++ show op ++ "= "
 showAsgnOp _ = " = "
 
+binOpType :: BinOp -> ((Type, Type), Type) -- (In, Out)
+binOpType op
+  | op `elem` [Mul, Add, Sub, Div, Mod, BitAnd, BitOr, BitXor, Shl, Shr]  = ((TInt, TInt), TInt)
+  | op `elem` [Lt, Leq, Gt, Geq]                                          = ((TInt, TInt), TBool)
+  | op `elem` [Eq, Neq]                                                   = ((TAny, TAny), TBool)
+  | op `elem` [And, Or]                                                   = ((TBool, TBool), TBool)
+  | otherwise                                                             = error $ "unknown binary operation: " ++ show op
+
+unOpType :: UnOp -> (Type, Type) -- (In, Out)
+unOpType op
+  | op `elem` [Neg, BitNot] = (TInt, TInt)
+  | op `elem` [Not]         = (TBool, TBool)
+  | otherwise               = error $ "unknown unary operation: " ++ show op
+  
+instance Eq Type where
+  TAny  == _      = True
+  _     == TAny   = True
+  TInt  == TInt   = True
+  TBool == TBool  = True
+  _     == _      = False
+  
+  
