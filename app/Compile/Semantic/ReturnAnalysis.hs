@@ -1,20 +1,32 @@
 module Compile.Semantic.ReturnAnalysis
-  ( analyzeReturns
+  ( checkReturns
   ) where
   
-import           Compile.Semantic.Util
+import Compile.Semantic.Util
+import Compile.Frontend.AST
+
+import Control.Monad (unless)
 
 
 checkReturns :: AST -> Semantic ()
-checkReturns (Program block) = unless (returnsBlock stmts) $ semanticFail' ("Not all control-flow paths return a value")
+checkReturns (Function block) = unless (blockReturns block) $ semanticFail' ("Not all control-flow paths return a value")
 
+blockReturns :: Block -> Bool
+blockReturns (Block stmts _) = stmtsReturn stmts
 
-returnsBlock :: Block -> Bool
-returnsBlock (Block stmts _) = any returnsStmt stmts
+stmtsReturn :: [Stmt] -> Bool
+stmtsReturn []     = False
+stmtsReturn (s:ss) = stmtReturns s || stmtsReturn ss
 
-returnsStmt :: Stmt -> Bool
-returnsStmt stmt = case stmt of
-  Ret _ _                     -> True
-  If _ t e _                  -> returnsStmt t && maybe False returnsStmt e
-  InnerBlock (Block ss _ ) _  -> returnsBlock ss
-  _                           -> False
+stmtReturns :: Stmt -> Bool
+stmtReturns stmt = case stmt of
+  Ret _ _ -> True
+  
+  If _ thenStmt mElseStmt _ ->
+    case mElseStmt of
+      Nothing -> False
+      Just elseStmt -> stmtReturns thenStmt && stmtReturns elseStmt
+  
+  InnerBlock blk _ -> blockReturns blk
+  
+  _       -> False

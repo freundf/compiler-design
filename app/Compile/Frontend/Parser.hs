@@ -42,7 +42,7 @@ astParser = do
   parens $ pure ()
   mainBlock <- block
   eof
-  return $ Program mainBlock
+  return $ Function mainBlock
 
 block :: Parser Block
 block = do
@@ -67,7 +67,7 @@ cWhile = do
   pos <- getSourcePos
   reserved "while"
   cond <- parens expr
-  body <- many stmt
+  body <- stmt
   return $ While cond body pos
 
 cFor :: Parser Stmt
@@ -81,7 +81,7 @@ cFor = do
     semi
     step <- optional simp
     return (fInit, cond, step)
-  body <- many stmt
+  body <- stmt
   return $ For fInit cond step body pos
 
 cIf :: Parser Stmt
@@ -89,14 +89,14 @@ cIf = do
   pos <- getSourcePos
   reserved "if"
   cond <- parens expr
-  body <- many stmt
+  body <- stmt
   elseBody <- optional cElse
   return $ If cond body elseBody pos
 
 cElse :: Parser Stmt
 cElse = do
   reserved "else"
-  many stmt
+  stmt
 
 cContinue :: Parser Stmt
 cContinue = do

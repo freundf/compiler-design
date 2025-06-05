@@ -28,9 +28,9 @@ data Stmt
   | Asgn String AsgnOp Expr SourcePos
   | Ret Expr SourcePos
   -- Control Statement
-  | While Expr [Stmt] SourcePos
-  | For (Maybe Stmt) Expr (Maybe Stmt) [Stmt] SourcePos
-  | If Expr [Stmt] (Maybe [Stmt]) SourcePos
+  | While Expr Stmt SourcePos
+  | For (Maybe Stmt) Expr (Maybe Stmt) Stmt SourcePos
+  | If Expr Stmt (Maybe Stmt) SourcePos
   | Break SourcePos
   | Continue SourcePos
   -- Block Statement

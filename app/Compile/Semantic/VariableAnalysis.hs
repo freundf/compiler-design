@@ -16,7 +16,7 @@ import           Text.Megaparsec.Pos (SourcePos)
 
 
 varStatusAnalysis :: AST -> Semantic ()
-varStatusAnalysis (Program block) = checkBlock block
+varStatusAnalysis (Function block) = checkBlock block
 
 checkBlock :: Block -> Semantic ()
 checkBlock (Block stmts _) = localScope $ mapM_ checkStmt stmts
@@ -59,7 +59,7 @@ checkStmt stmt = case stmt of
   If cond body elseBody pos -> do
     checkExprType cond TBool pos
     checkStmt body
-    maybe (pure ()) checkStmt elseBody
+    maybe (pure ()) (checkStmt) elseBody
   
   While cond body pos -> do
     checkExprType cond TBool pos
@@ -69,7 +69,7 @@ checkStmt stmt = case stmt of
     maybe (pure ()) checkStmt fInit
     checkExprType cond TBool pos
     case fStep of
-      Just (Decl _ name pos) -> semanticFail' ("Cannot declare '" ++ name ++ "'in for-loop step at " ++ prettyPos pos)
+      Just (Decl _ name pos) -> semanticFail' ("Cannot declare '" ++ name ++ "'in for-loop step at " ++ posPretty pos)
       Nothing -> maybe (pure ()) checkStmt fStep
     inLoop (checkStmt body)
     

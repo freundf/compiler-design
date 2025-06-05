@@ -17,18 +17,6 @@ import qualified Data.Map as Map
 import           Text.Megaparsec.Pos (SourcePos)
 
 
-data VarInfo = VarInfo
-  { vType :: Type
-  , vInit :: Bool
-  }
-  
-data Context = Context
-  { scopes :: [Map String VarInfo]
-  , loopDepth :: Int
-  }
-
-type Semantic a = StateT Context L1ExceptT a
-
 
 semanticAnalysis :: AST -> L1ExceptT ()
 semanticAnalysis ast = do
