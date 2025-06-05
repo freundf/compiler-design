@@ -2,10 +2,12 @@ module Compile.Backend.Asm
   ( codeGen
   ) where
   
-import           Compile.Backend.X86
-import           Compile.IR.IR (IRGraph(..), Node(..), NodeId, topoSort)
-import qualified Compile.IR.IR as IR
-import           Compile.IR.RegAlloc (regAlloc, coloringStrategy, naiveStrategy)
+import           Compile.Backend.X86.X86
+import           Compile.Backend.X86.Register
+import           Compile.Backend.X86.Instruction
+import           Compile.IR.IRGraph hiding (BinOp(..), UnOp(..))
+import qualified Compile.IR.IRGraph as IR
+import           Compile.IR.ControlFlow
 
 import           Control.Monad.State
 import           Data.Map (Map)
@@ -19,88 +21,168 @@ type CodeGen a = State CodeGenState a
 
 data CodeGenState = CodeGenState
   { regMap :: Map NodeId Opnd
-  , irGraph :: IRGraph
+  , cfg :: ControlFlowGraph
   , nextReg :: Integer
-  , code :: X86
+  , codeBlocks :: IntMap [Instr]
   }
-
-codeGen :: IRGraph -> X86
-codeGen graph = Prologue : regAlloc (code finalState) strategy
+  
+codeGen :: ControlFlowGraph -> X86
+codeGen cfg = (X86 defaultDirectives) . concatMap flattenBlock $ (order cfg)
   where
-    initialState = CodeGenState Map.empty graph 0 []
-    order = topoSort graph
-    finalState = execState (mapM_ genNode order) initialState
-    strategy = let maxReg = nextReg (finalState) - 1
-               in naiveStrategy maxReg
+    initialState = CodeGenState Map.empty cfg 0 IntMap.empty
+    genBlocks = do
+      mapM_ genBlock (order cfg)
+      mapM_ genBlockTerminator (order cfg)
+    finalState = execState genBlocks initialState
     
+    flattenBlock bb = IntMap.findWithDefault [] (bid bb) (codeBlocks finalState)
+
 freshReg :: CodeGen Opnd
 freshReg = do
   n <- gets nextReg
   modify $ \s -> s {nextReg = n + 1}
   pure (VirtReg n)
   
-recordResult :: NodeId -> Opnd -> CodeGen ()
-recordResult nid r = modify $ \s -> s { regMap = Map.insert nid r (regMap s)}
+assignReg :: NodeId -> Opnd -> CodeGen ()
+assignReg nid r = modify $ \s -> s { regMap = Map.insert nid r (regMap s)}
   
-lookupResult :: NodeId -> CodeGen Opnd
-lookupResult n = do
+lookupReg :: NodeId -> CodeGen Opnd
+lookupReg n = do
   m <- gets regMap
   case Map.lookup n m of
     Just r -> pure r
     Nothing -> error "unreachable, error in semantic analysis"
     
-emit :: Instr -> CodeGen()
-emit instr = modify $ \s -> s { code = (code s) ++ [instr]}
+emit :: BlockId -> Instr -> CodeGen()
+emit b instr = modify $ \s -> s { codeBlocks = IntMap.insertWith (flip (++)) b [instr] (codeBlocks s) }
 
-node :: NodeId -> CodeGen (Node)
-node n = (IntMap.! n) . irNodes . irGraph <$> get
+blockLabel :: BlockId -> String
+blockLabel b = "b" ++ show b
 
-genNode :: NodeId -> CodeGen Opnd
-genNode n = do
-  node <- node n
-  case node of
-    Start _ _ -> pure (Reg EAX)
+genBlock :: BasicBlock -> CodeGen ()
+genBlock bb = do
+  let lbl = blockLabel (bid bb)
+  emit (bid bb) (Label lbl)
+  mapM_ genNode (bNodes bb)
+  
+genBlockTerminator :: BasicBlock -> CodeGen ()
+genBlockTerminator = genTerminator . terminator
+
+genNode :: Node -> CodeGen ()
+genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
+  ConstNode (IntVal x) -> do
+    dst <- freshReg
+    emit' $ Mov dst (Imm (show x))
+    assignReg thisId dst
     
-    Const _ i _ -> do
-      r <- freshReg
-      emit $ Mov r (Imm i)
-      recordResult n r
-      pure r
-      
-    UnaryOp _ IR.Neg e _ -> do
-      r1 <- lookupResult e
-      r2 <- freshReg
-      emit $ Mov r2 r1
-      emit $ Neg r2
-      recordResult n r2
-      pure r2
-      
-    BinaryOp _ op lhs rhs _ _ -> do
-      r1 <- lookupResult lhs
-      r2 <- lookupResult rhs
-      r3 <- freshReg
-      case op of
-        IR.Add -> emit (Mov r3 r1) >> emit (Add r3 r2)
-        IR.Mul -> emit (Mov r3 r1) >> emit (Imul r3 r2)
-        IR.Sub -> emit (Mov r3 r1) >> emit (Sub r3 r2)
-        IR.Div -> do
-          emit $ Mov (Reg EAX) r1
-          emit $ Cdq
-          emit $ Idiv r2
-          emit $ Mov r3 (Reg EAX)
-        IR.Mod -> do
-          emit $ Mov (Reg EAX) r1
-          emit $ Cdq
-          emit $ Idiv r2
-          emit $ Mov r3 (Reg EDX)
-        _ -> error ("unknown binary operator: " ++ show op)
-      recordResult n r3
-      pure r3
-      
-    Return _ e _ _ -> do
-      r <- lookupResult e
-      emit $ Mov (Reg EAX) r
-      emit $ Ret
-      pure r
+  ConstNode (BoolVal b) -> do
+    dst <- freshReg
+    let imm = if b then Imm "1" else Imm "0"
+    emit' $ Mov dst imm
+    assignReg thisId dst
     
-    _ -> error ("unknown node: " ++ show node)
+  BinOpNode { binOp = op, left = l, right = r } -> do
+    lhs <- lookupReg l
+    rhs <- lookupReg r
+    dst <- freshReg
+    case op of
+      IR.Add -> emit' (Mov dst lhs) >> emit' (Add dst rhs)
+      IR.Sub -> emit' (Mov dst lhs) >> emit' (Sub dst rhs)
+      IR.Mul -> emit' (Mov dst lhs) >> emit' (Imul dst rhs)
+      IR.Div -> do
+        emit' $ Mov rax32 lhs
+        emit' $ Cdq
+        emit' $ Idiv rhs
+        emit' $ Mov dst rax32
+      IR.Mod -> do
+        emit' $ Mov rax32 lhs
+        emit' $ Cdq
+        emit' $ Idiv rhs
+        emit' $ Mov dst rdx32
+        
+      IR.Lt -> emitComp bid Setl lhs rhs dst
+      IR.Leq -> emitComp bid Setle lhs rhs dst
+      IR.Gt -> emitComp bid Setg lhs rhs dst
+      IR.Geq -> emitComp bid Setge lhs rhs dst
+      IR.Eq -> emitComp bid Sete lhs rhs dst
+      IR.Neq -> emitComp bid Setne lhs rhs dst
+      
+      IR.Shl -> do
+        emit' $ Mov dst lhs
+        emit' $ Mov rcx32 rhs
+        emit' $ Shl rcx8 dst
+      IR.Shr -> do
+        emit' $ Mov dst lhs
+        emit' $ Mov rcx32 rhs
+        emit' $ Mov rcx8 dst
+        
+      IR.BitAnd -> emit' (Mov dst lhs) >> emit' (And dst rhs)
+      IR.BitOr -> emit' (Mov dst lhs) >> emit' (Or dst rhs)
+      IR.BitXor -> emit' (Mov dst lhs) >> emit' (Xor dst rhs)
+      
+      _ -> error ("Can't generate Code for binary operator: " ++ show op)
+        
+    assignReg thisId dst
+    
+  UnOpNode { unOp = op, expr = e } -> do
+    rhs <- lookupReg e
+    dst <- freshReg
+    case op of
+      IR.Neg -> emit' (Mov dst rhs) >> emit' (Neg dst)
+      IR.BitNot -> emit' (Mov dst rhs) >> emit' (Not dst)
+      IR.Not -> do
+        emit' $ Cmp rhs (Imm "0")
+        emit' $ Sete rcx8
+        emit' $ Movzbl rcx32 rcx8
+        emit' $ Mov dst rcx32
+    assignReg thisId dst
+    
+  Phi { preds = ps } -> do
+    dst <- freshReg
+    let genPhiMove p = do
+          bid <- getBlock p
+          src <- lookupReg p
+          emit bid (Mov dst src)
+      
+    mapM_ genPhiMove ps
+    
+    
+  _ -> pure ()
+  where
+    emit' = emit bid
+  
+  
+emitComp :: BlockId -> (Opnd -> Instr) -> Opnd -> Opnd -> Opnd -> CodeGen ()
+emitComp bid setcc lhs rhs dst = do
+  emit' $ Cmp rhs lhs
+  emit' $ setcc rcx8
+  emit' $ Movzbl rcx32 rcx8
+  emit' $ Mov dst rcx32
+  where
+    emit' = emit bid
+  
+  
+getBlock :: NodeId -> CodeGen (BlockId)
+getBlock n = do
+  graph <- gets cfg
+  let node = (cfgNodes graph) IntMap.! n
+  pure (block node)
+  
+genTerminator :: Node -> CodeGen ()
+genTerminator Node { nType = nt, block = bid }= case nt of
+  Branch { cond = c, trueBlk = tBid, falseBlk = fBid } -> do
+    condOp <- lookupReg c
+    emit bid $ Cmp condOp (Imm "0")
+    let trueLbl = blockLabel tBid
+        falseLbl = blockLabel fBid
+    emit bid $ Jne trueLbl
+    emit bid $ Jmp falseLbl
+    
+  Return { expr = e } -> do
+    r <- lookupReg e
+    emit bid $ Mov rax32 r
+    emit bid $ Ret
+    
+  _ -> error "emitTerminator: unexpected node type"
+  
+  

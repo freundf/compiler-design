@@ -1,18 +1,18 @@
 module Compile.IR.SSA
-  (
+  ( irTranslate
   ) where
   
 import           Compile.Frontend.AST (AST)
 import qualified Compile.Frontend.AST as AST
 import           Compile.IR.IRGraph
 import           Compile.IR.GraphConstructor
-import           Compile.IR.Util.YCompPrinter
 
 import Control.Monad.State
 import Control.Monad (when)
 import Numeric (readHex, readDec)
 import Data.Char (isDigit)
 import Data.List (isPrefixOf)
+
 
 
 irTranslate :: AST -> IRGraph
@@ -73,7 +73,6 @@ translateStmt stmt = case stmt of
     prevBlock <- gets currentBlock
     innerBlock <- nid <$> newBlock [prevBlock]
     setCurrentBlock innerBlock
-    sealBlock innerBlock
     translateBlock blk
     nextBlock <- nid <$> newBlock [innerBlock]
     setCurrentBlock nextBlock
@@ -90,7 +89,7 @@ translateStmt stmt = case stmt of
     
     -- Then
     setCurrentBlock thenBlk
-    mapM_ translateStmt thenStmt
+    translateStmt thenStmt
     thenEnd <- gets currentBlock
     newJump mergeBlk
     sealBlock thenEnd
@@ -98,7 +97,7 @@ translateStmt stmt = case stmt of
     -- Else
     setCurrentBlock elseBlk
     case maybeElse of
-      Just elseStmt -> mapM_ translateStmt elseStmt
+      Just elseStmt -> translateStmt elseStmt
       Nothing -> pure ()
     elseEnd <- gets currentBlock
     newJump mergeBlk
@@ -126,7 +125,7 @@ translateStmt stmt = case stmt of
     modify $ \s -> s { breakTarget = Just exitBlk  , continueTarget = Just loopHeader }
     
     setCurrentBlock loopBody
-    mapM_ translateStmt body
+    translateStmt body
     bodyEnd <- gets currentBlock
     newJump loopHeader
     sealBlock bodyEnd
@@ -157,7 +156,7 @@ translateStmt stmt = case stmt of
     modify $ \s -> s { breakTarget = Just exitBlk  , continueTarget = Just loopHeader }
     
     setCurrentBlock bodyBlk
-    mapM_ translateStmt body
+    translateStmt body
     
     case maybeStep of
       Just stepStmt -> translateStmt stepStmt
@@ -215,21 +214,25 @@ translateExpr expr = case expr of
     return (nid res)
     
   AST.BinExpr op e1 e2 -> do
-    blk <- gets currentBlock
-    lhs <- translateExpr e1
-    rhs <- translateExpr e2
-    se <- readCurrentSideEffect
     let bop = translateBinOp op
-        nodeSe = if hasSideEffect bop then Just se else Nothing
-    res <- newBinOp bop lhs rhs nodeSe
-    if hasSideEffect bop
-      then do
-        projSe <- newProj (nid res) SideEffect
-        writeCurrentSideEffect (nid projSe)
-        projRes <- newProj (nid res) Result
-        return (nid projRes)
-      else
-        return (nid res)
+    case bop of
+      And -> translateShortCircuit bop e1 e2
+      Or -> translateShortCircuit bop e1 e2
+      _ -> do
+        blk <- gets currentBlock
+        lhs <- translateExpr e1
+        rhs <- translateExpr e2
+        se <- readCurrentSideEffect
+        let nodeSe = if hasSideEffect bop then Just se else Nothing
+        res <- newBinOp bop lhs rhs nodeSe
+        if hasSideEffect bop
+          then do
+            projSe <- newProj (nid res) SideEffect
+            writeCurrentSideEffect (nid projSe)
+            projRes <- newProj (nid res) Result
+            return (nid projRes)
+          else
+            return (nid res)
     
   AST.Ternary cond thenExpr elseExpr -> do
     blk <- gets currentBlock
@@ -268,12 +271,68 @@ translateBinOp op = case op of
   AST.Mod -> Mod
   AST.Gt  -> Gt
   AST.Lt  -> Lt
+  AST.Leq -> Leq
+  AST.Geq -> Geq
+  AST.Eq -> Eq
+  AST.Neq -> Neq
+  AST.And -> And
+  AST.Or -> Or
+  AST.BitAnd -> BitAnd
+  AST.BitOr -> BitOr
+  AST.BitXor -> BitXor
+  AST.Shl -> Shl
+  AST.Shr -> Shr
   _ -> error ("Unknown binary operator: " ++ show op)
   
 translateUnOp :: AST.UnOp -> UnOp
 translateUnOp op = case op of
   AST.Neg -> Neg
+  AST.Not -> Not
+  AST.BitNot -> BitNot
   _ -> error ("Unknown unary operator: " ++ show op)
+  
+translateShortCircuit :: BinOp -> AST.Expr -> AST.Expr -> GraphConstructor NodeId
+translateShortCircuit op e1 e2 = do
+  blk <- gets currentBlock
+  
+  lhs <- translateExpr e1
+  lhsBlk <- gets currentBlock
+  
+  rhsBlk <- nid <$> newBlock [lhsBlk]
+  mergeBlk <- nid <$> newBlock [rhsBlk]
+  
+  constTrue <- nid <$> newConst (BoolVal True)
+  constFalse <- nid <$> newConst (BoolVal False)
+  
+  case op of
+    And -> do
+      newBranch lhs rhsBlk mergeBlk
+      sealBlock lhsBlk
+      setCurrentBlock rhsBlk
+      rhs <- translateExpr e2
+      sealBlock rhsBlk
+      newJump mergeBlk
+      
+      setCurrentBlock mergeBlk
+      phi <- newPhi mergeBlk [constFalse, rhs]
+      return (nid phi)
+      
+    Or -> do
+      newBranch lhs mergeBlk rhsBlk
+      sealBlock lhsBlk
+      setCurrentBlock rhsBlk
+      rhs <- translateExpr e2
+      sealBlock rhsBlk
+      newJump mergeBlk
+      
+      setCurrentBlock mergeBlk
+      phi <- newPhi mergeBlk [constTrue, rhs]
+      return (nid phi)
+    
+    _ -> error $ "translateShortCircuit: expected And or Or, got: " ++ show op
+      
+      
+      
   
 hasSideEffect :: BinOp -> Bool
 hasSideEffect op = case op of

@@ -245,3 +245,4 @@ insertMergePhis firstBlk secondBlk mergeBlk = do
     phi <- newPhi blk [firstVal, secondVal]
     let updated = IntMap.insert mergeBlk (nid phi) imap
     modify $ \s -> s { currentDef = Map.insert var updated defs }
+    

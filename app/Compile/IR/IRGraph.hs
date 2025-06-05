@@ -13,6 +13,8 @@ module Compile.IR.IRGraph
   , addPredecessor
   , addSuccessor
   , addNode
+  , isTerminator
+  , getBlocks
   ) where
 
   
@@ -50,18 +52,18 @@ data Value = IntVal Int | BoolVal Bool
   deriving (Eq, Show)
 
 data BinOp
-  = Mul
-  | Add
-  | Sub
-  | Div
-  | Mod
-  | Gt
-  | Lt
+  = Mul | Add | Sub | Div | Mod
+  | Lt | Leq | Gt | Geq
+  | Eq | Neq
+  | And | Or
+  | BitAnd | BitOr | BitXor
+  | Shl | Shr
   deriving (Eq, Show)
   
 data UnOp
-  = Neg
+  = Neg | Not | BitNot
   deriving (Eq, Show)
+ 
  
 data IRGraph = IRGraph
   { name :: String
@@ -71,6 +73,7 @@ data IRGraph = IRGraph
   , nodes :: IntMap Node
   } deriving (Eq, Show)
   
+
   
 startGraph :: IRGraph
 startGraph = IRGraph
@@ -124,4 +127,15 @@ addPredecessor graph nodeId predId =
           updatedNodes = IntMap.insert (nodeId) updatedNode (nodes graph)
       in addSuccessor (graph { nodes = updatedNodes }) predId nodeId
   
+getBlocks :: IRGraph -> [NodeId]
+getBlocks = map nid . filter isBlock . IntMap.elems . nodes
+  where
+    isBlock node = case nType node of
+      Block _ -> True
+      _       -> False
 
+isTerminator :: Node -> Bool
+isTerminator n = case nType n of
+  Branch _ _ _ -> True
+  Return _ _ -> True
+  _        -> False

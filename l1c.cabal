@@ -11,7 +11,7 @@ maintainer:         darius.schefer@student.kit.edu
 build-type:         Simple
 
 common warnings
-    ghc-options: -Wall
+    ghc-options: -Wno-missing-signatures -Wno-unused-top-binds
 
 executable l1c
     import:           warnings
@@ -29,15 +29,22 @@ executable l1c
     other-modules:
                   Args,
                   Compile,
-                  Compile.AST,
-                  Compile.Parser,
-                  Compile.Semantic,
-                  Compile.Asm,
-                  Compile.X86,
-                  Compile.IR,
-                  Compile.RegAlloc,
-                  Compile.Liveness,
-                  Compile.GraphColoring,
+                  Compile.Frontend.AST,
+                  Compile.Frontend.Parser,
+                  Compile.Frontend.Lexer,
+                  Compile.Semantic.Semantic,
+                  Compile.Semantic.LivenessAnalysis,
+                  Compile.Semantic.ReturnAnalysis,
+                  Compile.Semantic.VariableAnalysis,
+                  Compile.Semantic.Util,
+                  Compile.IR.SSA,
+                  Compile.IR.IRGraph,
+                  Compile.IR.ControlFlow,
+                  Compile.IR.GraphConstructor,
+                  Compile.Backend.Asm,
+                  Compile.Backend.X86.X86,
+                  Compile.Backend.X86.Register,
+                  Compile.Backend.X86.Instruction,
                   Error
     hs-source-dirs:   app
     default-language: Haskell2010
