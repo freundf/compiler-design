@@ -23,23 +23,26 @@ data GraphState = GraphState
   , sealedBlocks :: IntSet
   , currentBlock :: NodeId
   , nextNodeId :: NodeId
-  , breakTarget :: Maybe NodeId
-  , continueTarget :: Maybe NodeId
+  , breakTarget :: [NodeId]
+  , continueTarget :: [NodeId]
   }
 
 emptyState :: GraphState
 emptyState = GraphState
-  { graph = startGraph
+  { graph = graph
   , currentDef = Map.empty
   , incompletePhis = IntMap.empty
-  , currentSideEffect = IntMap.singleton 0 2
+  , currentSideEffect = IntMap.empty
   , incompleteSEPhis = IntMap.empty
-  , sealedBlocks = IntSet.singleton 0
-  , currentBlock = 0
-  , nextNodeId = 3
-  , breakTarget = Nothing
-  , continueTarget = Nothing
+  , sealedBlocks = IntSet.singleton (startBlock graph)
+  , currentBlock = startBlock graph
+  , nextNodeId = IntMap.size (nodes graph)
+  , breakTarget = []
+  , continueTarget = []
   }
+  where
+    graph = newGraph "main"
+  
 
 type GraphConstructor a = State GraphState a
 
@@ -70,6 +73,9 @@ newNode_ blk t = do
 newStart :: GraphConstructor Node
 newStart = newNode Start
 
+newExit :: GraphConstructor Node
+newExit = newNode Exit
+
 newBinOp :: BinOp -> NodeId -> NodeId -> Maybe NodeId -> GraphConstructor Node
 newBinOp op l r se = newNode (BinOpNode op l r se)
 
@@ -85,8 +91,8 @@ newConst i = newNode (ConstNode i)
 newProj :: NodeId -> ProjInfo -> GraphConstructor Node
 newProj n info = newNode (Proj n info)
 
-newPhi :: NodeId -> [NodeId] -> GraphConstructor Node
-newPhi blk ps = newNode_ blk (Phi ps)
+newPhi :: NodeId -> [NodeId] -> Bool -> GraphConstructor Node
+newPhi blk ps se = newNode_ blk (Phi ps se)
 
 newBlock :: [NodeId] -> GraphConstructor Node
 newBlock ps = do
@@ -95,14 +101,14 @@ newBlock ps = do
   registerNode node
   return node
   
-newBranch :: NodeId -> NodeId -> NodeId -> GraphConstructor Node
-newBranch cond trueBlk falseBlk = newNode (Branch cond trueBlk falseBlk)
+newBranch :: NodeId -> GraphConstructor Node
+newBranch cond = newNode (Cond cond)
 
-newJump :: NodeId -> GraphConstructor ()
-newJump target = do
-  blk <- gets currentBlock
-  modify $ \s -> s { graph = addPredecessor (graph s) target blk }
+newIf :: NodeId -> GraphConstructor Node
+newIf cond = newNode (Cond cond)
 
+newJump :: GraphConstructor Node
+newJump = newNode Jump
 
 writeVar :: Name -> NodeId -> NodeId -> GraphConstructor ()
 writeVar name blk val = modify $ \s -> s {
@@ -126,7 +132,7 @@ readVarRecursive name blk = do
   sealed <- gets sealedBlocks
   val <- if not (IntSet.member blk sealed)
           then do
-            phiId <- nid <$> newPhi blk []
+            phiId <- nid <$> newPhi blk [] False
             modify $ \s -> s
               { incompletePhis = IntMap.insertWith
                                   Map.union
@@ -138,9 +144,11 @@ readVarRecursive name blk = do
           else do
             preds <- predecessors <$> node blk
             case preds of
-              [p] -> readVar name p
+              [p] -> do
+                pBlk <- block <$> node p
+                readVar name pBlk
               _ -> do
-                phiId <- nid <$> newPhi blk []
+                phiId <- nid <$> newPhi blk [] False
                 writeVar name blk phiId
                 addPhiOperands name phiId
   writeVar name blk val
@@ -156,7 +164,7 @@ appendPhiOperand :: NodeId -> NodeId -> GraphConstructor ()
 appendPhiOperand phiId n = do
   phi <- node phiId
   let updated = case nType phi of
-        Phi ps -> phi { nType = Phi (ps ++ [n]) }
+        Phi ps se -> phi { nType = Phi (ps ++ [n]) se }
         _ -> error "appendPhiOperand: not a Phi node"
   modify $ \s -> s { graph = addSuccessor ((graph s) { nodes = IntMap.insert phiId updated (nodes (graph s)) }) n phiId }
 
@@ -165,7 +173,8 @@ addPhiOperands name phiId = do
   blk <- block <$> node phiId
   preds <- predecessors <$> node blk
   forM_ preds $ \p -> do
-    v <- readVar name p
+    pBlk <- block <$> node p
+    v <- readVar name pBlk
     appendPhiOperand phiId v
   tryRemoveTrivialPhi phiId
   
@@ -174,7 +183,8 @@ addSEPhiOperands phiId = do
   blk <- block <$> node phiId
   preds <- predecessors <$> (node blk)
   forM_ preds $ \p -> do
-    v <- readSideEffect p
+    pBlk <- block <$> node p
+    v <- readSideEffect pBlk
     appendPhiOperand phiId v
   tryRemoveTrivialPhi phiId
   
@@ -220,29 +230,30 @@ readSideEffectRecursive blk = do
   sealed <- gets sealedBlocks
   val <- if not (IntSet.member blk sealed)
            then do
-             phiId <- nid <$> newPhi blk []
+             phiId <- nid <$> newPhi blk [] True
              modify $ \s -> s { incompleteSEPhis = IntMap.insert blk phiId (incompleteSEPhis s) }
              return phiId
            else do
              preds <- predecessors <$> node blk
              case preds of
-               [p] -> readSideEffect p
+               [p] -> do
+                 pBlk <- block <$> node p
+                 readSideEffect pBlk
                _   -> do
-                 phiId <- nid <$> newPhi blk []
+                 phiId <- nid <$> newPhi blk [] True
                  writeSideEffect blk phiId
                  addSEPhiOperands phiId
   writeSideEffect blk val
   return val
+  
+addBreakTarget :: NodeId -> GraphConstructor ()
+addBreakTarget t = modify $ \s -> s { breakTarget = t : (breakTarget s)}
 
-insertMergePhis :: NodeId -> NodeId -> NodeId -> GraphConstructor ()
-insertMergePhis firstBlk secondBlk mergeBlk = do
-  blk <- gets currentBlock
-  defs <- gets currentDef
-  let bothDefined = Map.filter (\imap -> IntMap.member firstBlk imap && IntMap.member secondBlk imap) defs
-  forM_ (Map.toList bothDefined) $ \(var, imap) -> do
-    let firstVal = imap IntMap.! firstBlk
-        secondVal = imap IntMap.! secondBlk
-    phi <- newPhi blk [firstVal, secondVal]
-    let updated = IntMap.insert mergeBlk (nid phi) imap
-    modify $ \s -> s { currentDef = Map.insert var updated defs }
-    
+removeBreakTarget :: GraphConstructor ()
+removeBreakTarget = modify $ \s -> s { breakTarget = tail (breakTarget s)}
+
+addContinueTarget :: NodeId -> GraphConstructor ()
+addContinueTarget t = modify $ \s -> s { continueTarget = t : (continueTarget s)}
+
+removeContinueTarget :: GraphConstructor ()
+removeContinueTarget = modify $ \s -> s { continueTarget = tail (continueTarget s)}

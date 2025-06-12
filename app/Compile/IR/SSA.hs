@@ -16,24 +16,33 @@ import Data.List (isPrefixOf)
 
 
 irTranslate :: AST -> IRGraph
-irTranslate (AST.Function blk) = graph $ execState (translateBlock blk) initialState
+irTranslate function = graph $ execState (translateFunction function) initialState
   where
     initialState = emptyState
     
+translateFunction :: AST -> GraphConstructor ()
+translateFunction (AST.Function body) = do
+  start <- nid <$> newStart
+  seProj <- nid <$> newProj start SideEffect
+  writeCurrentSideEffect seProj
+  
+  blk <- gets currentBlock
+  endBlk <- gets (endBlock . graph)
+  setCurrentBlock endBlk
+  newExit
+  setCurrentBlock blk
+  
+  translateBlock body
     
 translateBlock :: AST.Block -> GraphConstructor ()
 translateBlock (AST.Block stmts _)= mapUntilRet translateStmt stmts
   where
-    mapUntilRet f [] = sealLast
+    mapUntilRet f [] = pure ()
     mapUntilRet f (s:ss) = do
       f s
       case s of
-        AST.Ret _ _ -> sealLast
+        AST.Ret _ _ -> pure ()
         _ -> mapUntilRet f ss
-        
-    sealLast = do
-      blk <- gets currentBlock
-      sealBlock blk
 
 translateStmt :: AST.Stmt -> GraphConstructor ()
 translateStmt stmt = case stmt of
@@ -52,13 +61,19 @@ translateStmt stmt = case stmt of
         writeVar name blk rhs
       Just binop -> do
         let bop = translateBinOp binop
-        lhs <- readVar name blk
-        rhsExpr <- translateExpr expr
-        se <- readCurrentSideEffect
-        let nodeSe = if hasSideEffect bop then Just se else Nothing
-        node <- newBinOp bop lhs rhsExpr nodeSe
-        when (hasSideEffect bop) $ writeCurrentSideEffect (nid node)
-        writeVar name blk (nid node)
+        if hasSideEffect bop
+          then do
+            rhs <- translateExpr expr
+            lhs <- readVar name blk
+            se <- readCurrentSideEffect
+            node <- nid <$> newBinOp bop lhs rhs (Just se)
+            projRes <- projResultSE node
+            writeVar name blk projRes
+          else do
+            rhs <- translateExpr expr
+            lhs <- readVar name blk
+            node <- nid <$> newBinOp bop lhs rhs Nothing
+            writeVar name blk node
       
     
   AST.Ret expr _ -> do
@@ -69,127 +84,142 @@ translateStmt stmt = case stmt of
     endBlk <- gets (endBlock . graph)
     modify $ \s -> s { graph = addPredecessor (graph s) endBlk (nid ret) }
   
-  AST.InnerBlock blk _ -> do
-    prevBlock <- gets currentBlock
-    innerBlock <- nid <$> newBlock [prevBlock]
-    setCurrentBlock innerBlock
-    translateBlock blk
-    nextBlock <- nid <$> newBlock [innerBlock]
-    setCurrentBlock nextBlock
-    sealBlock nextBlock
-       
+  AST.InnerBlock blk _ -> translateBlock blk
+  
   AST.If cond thenStmt maybeElse _ -> do
     -- Setup
-    condVal <- translateExpr cond
     blk <- gets currentBlock
-    thenBlk <- nid <$> newBlock [blk]
-    elseBlk <- nid <$> newBlock [blk]
-    mergeBlk <- nid <$> newBlock []
-    newBranch condVal thenBlk elseBlk
-    
-    -- Then
+    cNode <- translateExpr cond
+    ifNode <- nid <$> newIf cNode
+    trueProj <- nid <$> newProj ifNode CondTrue
+    falseProj <- nid <$> newProj ifNode CondFalse
+    sealBlock blk
+
+    -- Then Branch
+    thenBlk <- nid <$> newBlock [trueProj]
     setCurrentBlock thenBlk
+    sealBlock thenBlk
     translateStmt thenStmt
     thenEnd <- gets currentBlock
-    newJump mergeBlk
     sealBlock thenEnd
-    
-    -- Else
+    thenJump <- nid <$> newJump
+
+    -- Else Branch
+    elseBlk <- nid <$> newBlock [falseProj]
     setCurrentBlock elseBlk
+    sealBlock elseBlk
     case maybeElse of
       Just elseStmt -> translateStmt elseStmt
       Nothing -> pure ()
     elseEnd <- gets currentBlock
-    newJump mergeBlk
     sealBlock elseEnd
-    
+    elseJump <- nid <$> newJump
+
     -- Merge
+    mergeBlk <- nid <$> newBlock [thenJump, elseJump]
     setCurrentBlock mergeBlk
     sealBlock mergeBlk
-    
+
   AST.While cond body _ -> do
     blk <- gets currentBlock
+    sealBlock blk
+    endJump <- nid <$> newJump
     
-    -- loop header
-    loopHeader <- nid <$> newBlock [blk]
-    setCurrentBlock loopHeader
-    condVal <- translateExpr cond
+    whileBlk <- nid <$> newBlock [endJump]
+    setCurrentBlock whileBlk
+    addContinueTarget whileBlk
+    cNode <- translateExpr cond
+    ifNode <- nid <$> newIf cNode
+    trueProj <- nid <$> newProj ifNode CondTrue
+    falseProj <- nid <$> newProj ifNode CondFalse
     
-    -- loop
-    loopBody <- nid <$> newBlock [loopHeader]
-    exitBlk <- nid <$> newBlock [loopHeader]
-    newBranch condVal loopBody exitBlk
+    mergeBlk <- nid <$> newBlock [falseProj]
+    addBreakTarget mergeBlk
     
-    oldBreak <- gets breakTarget
-    oldContinue <- gets continueTarget
-    modify $ \s -> s { breakTarget = Just exitBlk  , continueTarget = Just loopHeader }
-    
-    setCurrentBlock loopBody
+    bodyBlk <- nid <$> newBlock [trueProj]
+    sealBlock bodyBlk
+    setCurrentBlock bodyBlk
     translateStmt body
-    bodyEnd <- gets currentBlock
-    newJump loopHeader
-    sealBlock bodyEnd
-    sealBlock loopHeader
+    endBlk <- gets currentBlock
+    sealBlock endBlk
+    loopJump <- nid <$> newJump
+    addPredecessor' whileBlk loopJump
     
-    modify $ \s -> s { breakTarget = oldBreak, continueTarget = oldContinue }
+    removeContinueTarget
+    sealBlock whileBlk
+    removeBreakTarget
+    sealBlock mergeBlk
+    setCurrentBlock mergeBlk
     
-    -- End Block
-    setCurrentBlock exitBlk
-    sealBlock exitBlk
-    
+  
   AST.For maybeInit cond maybeStep body _ -> do
     case maybeInit of
-      Just initStmt -> translateStmt initStmt
-      Nothing       -> pure ()
+      Just i -> translateStmt i
+      Nothing -> pure ()
+      
+    blk <- gets currentBlock
+    sealBlock blk
+    initJump <- nid <$> newJump
     
-    beforeBlk <- gets currentBlock
-    loopHeader <- nid <$> newBlock [beforeBlk]
-    setCurrentBlock loopHeader
-    condVal <- translateExpr cond
+    forBlk <- nid <$> newBlock [initJump]
+    mergeBlk <- nid <$> newBlock []
+    addBreakTarget mergeBlk
+    bodyBlk <- nid <$> newBlock []
+    stepBlk <- nid <$> newBlock []
+    addContinueTarget stepBlk
     
-    bodyBlk <- nid <$> newBlock [loopHeader]
-    exitBlk <- nid <$> newBlock [loopHeader]
-    newBranch condVal bodyBlk exitBlk
+    setCurrentBlock forBlk
+    cNode <- translateExpr cond
+    ifNode <- nid <$> newIf cNode
+    trueProj <- nid <$> newProj ifNode CondTrue
+    falseProj <- nid <$> newProj ifNode CondFalse
+    addPredecessor' bodyBlk trueProj
+    addPredecessor' mergeBlk falseProj
     
-    oldBreak <- gets breakTarget
-    oldContinue <- gets continueTarget
-    modify $ \s -> s { breakTarget = Just exitBlk  , continueTarget = Just loopHeader }
+    setCurrentBlock stepBlk
+    case maybeStep of
+      Just step -> translateStmt step
+      Nothing -> pure ()
+    stepEnd <- nid <$> newJump
+    addPredecessor' forBlk stepEnd
     
     setCurrentBlock bodyBlk
     translateStmt body
+    loopEnd <- nid <$> newJump
+    addPredecessor' stepBlk loopEnd
     
-    case maybeStep of
-      Just stepStmt -> translateStmt stepStmt
-      Nothing       -> pure ()
-    
-    bodyEnd <- gets currentBlock
-    newJump loopHeader
-    sealBlock bodyEnd
-    sealBlock loopHeader
-    
-    modify $ \s -> s { breakTarget = oldBreak, continueTarget = oldContinue }
-    
-    setCurrentBlock exitBlk
-    sealBlock exitBlk
+    sealBlock forBlk
+    sealBlock stepBlk
+    sealBlock bodyBlk
+    sealBlock mergeBlk
+    removeBreakTarget
+    removeContinueTarget
+    setCurrentBlock mergeBlk
     
   AST.Break _ -> do
-    mBreak <- gets breakTarget
-    case mBreak of
-      Just breakBlk -> do
-        newJump breakBlk
-        blk <- gets currentBlock
-        sealBlock blk
-      Nothing -> error "Break outside loop"
-      
+    break <- nid <$> newJump
+    targets <- gets breakTarget
+    let target = case targets of
+                   [] -> error "break outside loop"
+                   (t:ts) -> t
+    addPredecessor' target break
+    blk <- gets currentBlock
+    sealBlock blk
+    afterBreak <- nid <$> newBlock []
+    setCurrentBlock afterBreak
+  
   AST.Continue _ -> do
-    mContinue <- gets continueTarget
-    case mContinue of
-      Just continueBlk -> do
-        newJump continueBlk
-        blk <- gets currentBlock
-        sealBlock blk
-      Nothing -> error "Continue outside loop"
-      
+    continue <- nid <$> newJump
+    targets <- gets continueTarget
+    let target = case targets of
+                   [] -> error "continue outside loop"
+                   (t:ts) -> t
+    addPredecessor' target continue
+    blk <- gets currentBlock
+    sealBlock blk
+    afterContinue <- nid <$> newBlock []
+    setCurrentBlock afterContinue
+  
   
 translateExpr :: AST.Expr -> GraphConstructor NodeId
 translateExpr expr = case expr of
@@ -223,44 +253,15 @@ translateExpr expr = case expr of
         lhs <- translateExpr e1
         rhs <- translateExpr e2
         se <- readCurrentSideEffect
-        let nodeSe = if hasSideEffect bop then Just se else Nothing
-        res <- newBinOp bop lhs rhs nodeSe
         if hasSideEffect bop
           then do
-            projSe <- newProj (nid res) SideEffect
-            writeCurrentSideEffect (nid projSe)
-            projRes <- newProj (nid res) Result
-            return (nid projRes)
-          else
-            return (nid res)
+            node <- nid <$> newBinOp bop lhs rhs (Just se)
+            projResultSE node
+          else do
+            node <- nid <$> newBinOp bop lhs rhs Nothing
+            pure node
     
-  AST.Ternary cond thenExpr elseExpr -> do
-    blk <- gets currentBlock
-    condVal <- translateExpr cond
-    
-    thenBlk <- nid <$> newBlock [blk]
-    elseBlk <- nid <$> newBlock [blk]
-    mergeBlk <- nid <$> newBlock []
-    
-    newBranch condVal thenBlk elseBlk
-    
-    setCurrentBlock thenBlk
-    thenVal <- translateExpr thenExpr
-    newJump mergeBlk
-    thenEnd <- gets currentBlock
-    sealBlock thenEnd
-    
-    setCurrentBlock elseBlk
-    elseVal <- translateExpr elseExpr
-    newJump mergeBlk
-    elseEnd <- gets currentBlock
-    sealBlock elseEnd
-    
-    setCurrentBlock mergeBlk
-    sealBlock mergeBlk
-    
-    phi <- newPhi mergeBlk [thenVal, elseVal]
-    return (nid phi)
+  AST.Ternary cond thenExpr elseExpr -> error "not implemented"
   
 translateBinOp :: AST.BinOp -> BinOp
 translateBinOp op = case op of
@@ -292,47 +293,14 @@ translateUnOp op = case op of
   _ -> error ("Unknown unary operator: " ++ show op)
   
 translateShortCircuit :: BinOp -> AST.Expr -> AST.Expr -> GraphConstructor NodeId
-translateShortCircuit op e1 e2 = do
-  blk <- gets currentBlock
-  
-  lhs <- translateExpr e1
-  lhsBlk <- gets currentBlock
-  
-  rhsBlk <- nid <$> newBlock [lhsBlk]
-  mergeBlk <- nid <$> newBlock [rhsBlk]
-  
-  constTrue <- nid <$> newConst (BoolVal True)
-  constFalse <- nid <$> newConst (BoolVal False)
-  
-  case op of
-    And -> do
-      newBranch lhs rhsBlk mergeBlk
-      sealBlock lhsBlk
-      setCurrentBlock rhsBlk
-      rhs <- translateExpr e2
-      sealBlock rhsBlk
-      newJump mergeBlk
+translateShortCircuit op e1 e2 = error "not implemented"
+
       
-      setCurrentBlock mergeBlk
-      phi <- newPhi mergeBlk [constFalse, rhs]
-      return (nid phi)
-      
-    Or -> do
-      newBranch lhs mergeBlk rhsBlk
-      sealBlock lhsBlk
-      setCurrentBlock rhsBlk
-      rhs <- translateExpr e2
-      sealBlock rhsBlk
-      newJump mergeBlk
-      
-      setCurrentBlock mergeBlk
-      phi <- newPhi mergeBlk [constTrue, rhs]
-      return (nid phi)
-    
-    _ -> error $ "translateShortCircuit: expected And or Or, got: " ++ show op
-      
-      
-      
+projResultSE :: NodeId -> GraphConstructor NodeId
+projResultSE n = do
+  projSE <- nid <$> newProj n SideEffect
+  writeCurrentSideEffect projSE
+  nid <$> newProj n Result
   
 hasSideEffect :: BinOp -> Bool
 hasSideEffect op = case op of
@@ -351,3 +319,6 @@ readBase :: ReadS Int -> String -> Int
 readBase parser str = case parser str of
   [(n, "")] -> n
   _         -> error ("Failed to parse integer: " ++ str)
+  
+addPredecessor' :: NodeId -> NodeId -> GraphConstructor ()
+addPredecessor' nodeId predId = modify $ \s -> s { graph = addPredecessor (graph s) nodeId predId }

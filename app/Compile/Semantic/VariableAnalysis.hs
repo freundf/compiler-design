@@ -19,7 +19,7 @@ varStatusAnalysis :: AST -> Semantic ()
 varStatusAnalysis (Function block) = checkBlock block
 
 checkBlock :: Block -> Semantic ()
-checkBlock (Block stmts _) = localScope $ mapM_ checkStmt stmts
+checkBlock (Block stmts _) = mapM_ checkStmt stmts
 
 checkStmt :: Stmt -> Semantic ()
 checkStmt stmt = case stmt of
@@ -69,13 +69,13 @@ checkStmt stmt = case stmt of
     maybe (pure ()) checkStmt fInit
     checkExprType cond TBool pos
     case fStep of
-      Just (Decl _ name pos) -> semanticFail' ("Cannot declare '" ++ name ++ "'in for-loop step at " ++ posPretty pos)
+      Just (Decl _ name pos) -> semanticFail' ("Cannot declare '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
       Nothing -> maybe (pure ()) checkStmt fStep
     inLoop (checkStmt body)
     
   Break pos -> checkInLoop pos
   Continue pos -> checkInLoop pos
-  InnerBlock blk _ -> localScope (checkBlock blk)
+  InnerBlock blk _ -> inLocalScope (checkBlock blk)
   
   
 checkExpr :: Expr -> Semantic Type
@@ -128,8 +128,8 @@ checkInLoop pos = do
   depth <- gets loopDepth
   when (depth <= 0) $ semanticFail' ("'break' or 'continue' not within loop at " ++ posPretty pos)
 
-localScope :: Semantic a -> Semantic a
-localScope m = do
+inLocalScope :: Semantic a -> Semantic a
+inLocalScope m = do
   modify $ \s -> s { scopes = Map.empty : scopes s}
   res <- m
   modify $ \s -> s { scopes = tail (scopes s) }

@@ -6,7 +6,7 @@ import Compile.Backend.X86.Register
 data Instr
   -- Move
   = Mov Opnd Opnd
-  | Movzbl Opnd Opnd
+  | Movzx Opnd Opnd
   
   -- Arithmetic
   | Add Opnd Opnd
@@ -66,54 +66,54 @@ data Opnd
 
 instance Show Instr where
   -- Move
-  show (Mov o1 o2)  = "mov " ++ show o1 ++ ", " ++ show o2
-  show (Movzbl o1 o2) = "movzbl " ++ show o1 ++ ", " ++ show o2
+  show (Mov o1 o2)  = "  mov " ++ show o1 ++ ", " ++ show o2
+  show (Movzx o1 o2) = "  movzx " ++ show o1 ++ ", " ++ show o2
   
   -- Arithmetic
-  show (Add o1 o2)  = "add " ++ show o1 ++ ", " ++ show o2
-  show (Sub o1 o2)  = "sub " ++ show o1 ++ ", " ++ show o2
-  show (Imul o1 o2) = "imul " ++ show o1 ++ ", " ++ show o2
-  show (Idiv o)     = "idiv " ++ show o
-  show (Neg o)      = "neg " ++ show o
-  show Cdq          = "cdq"
+  show (Add o1 o2)  = "  add " ++ show o1 ++ ", " ++ show o2
+  show (Sub o1 o2)  = "  sub " ++ show o1 ++ ", " ++ show o2
+  show (Imul o1 o2) = "  imul " ++ show o1 ++ ", " ++ show o2
+  show (Idiv o)     = "  idiv " ++ show o
+  show (Neg o)      = "  neg " ++ show o
+  show Cdq          = "  cdq"
   
   -- Logic
-  show (And o1 o2)    = "and " ++ show o1 ++ ", " ++ show o2
-  show (Or  o1 o2)    = "or "  ++ show o1 ++ ", " ++ show o2
-  show (Xor o1 o2)    = "xor " ++ show o1 ++ ", " ++ show o2
+  show (And o1 o2)    = "  and " ++ show o1 ++ ", " ++ show o2
+  show (Or  o1 o2)    = "  or "  ++ show o1 ++ ", " ++ show o2
+  show (Xor o1 o2)    = "  xor " ++ show o1 ++ ", " ++ show o2
   
   -- Shift
-  show (Shl amt dst)  = "shl " ++ show amt ++ ", " ++ show dst
-  show (Shr amt dst)  = "shr " ++ show amt ++ ", " ++ show dst
+  show (Shl amt dst)  = "  shl " ++ show amt ++ ", " ++ show dst
+  show (Shr amt dst)  = "  shr " ++ show amt ++ ", " ++ show dst
   
   -- Setcc / Comparison
-  show (Cmp o1 o2)    = "cmp "  ++ show o1 ++ ", " ++ show o2
-  show (Setl o)       = "setl " ++ show o
-  show (Setle o)      = "setle " ++ show o
-  show (Setg o)       = "setg " ++ show o
-  show (Setge o)      = "setge " ++ show o
-  show (Sete o)       = "sete " ++ show o
-  show (Setne o)      = "setne " ++ show o
+  show (Cmp o1 o2)    = "  cmp "  ++ show o1 ++ ", " ++ show o2
+  show (Setl o)       = "  setl " ++ show o
+  show (Setle o)      = "  setle " ++ show o
+  show (Setg o)       = "  setg " ++ show o
+  show (Setge o)      = "  setge " ++ show o
+  show (Sete o)       = "  sete " ++ show o
+  show (Setne o)      = "  setne " ++ show o
   
   -- Control
-  show (Jmp lbl)      = "jmp "  ++ lbl
-  show (Jne lbl)      = "jne "  ++ lbl
-  show (Je lbl)       = "je "   ++ lbl
-  show (Jl lbl)       = "jl "   ++ lbl
-  show (Jle lbl)      = "jle "  ++ lbl
-  show (Jg lbl)       = "jg "   ++ lbl
-  show (Jge lbl)      = "jge "  ++ lbl
-  show Ret            = "ret"
-  show (Call s)       = "    call " ++ s
-  show Syscall        = "    syscall"
+  show (Jmp lbl)      = "  jmp "  ++ lbl
+  show (Jne lbl)      = "  jne "  ++ lbl
+  show (Je lbl)       = "  je "   ++ lbl
+  show (Jl lbl)       = "  jl "   ++ lbl
+  show (Jle lbl)      = "  jle "  ++ lbl
+  show (Jg lbl)       = "  jg "   ++ lbl
+  show (Jge lbl)      = "  jge "  ++ lbl
+  show Ret            = "  ret"
+  show (Call s)       = "  call " ++ s
+  show Syscall        = "  syscall"
   
   -- Stack
-  show (Push o)     = "push " ++ show o
-  show (Pop o)     = "pop " ++ show o
+  show (Push o)     = "  push " ++ show o
+  show (Pop o)     = "  pop " ++ show o
  
   -- Other
   show (Label s)      = s ++ ":"
-  show Nop            = "    nop"
+  show Nop            = ""
 
 
 instance Show Opnd where

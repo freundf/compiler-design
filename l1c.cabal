@@ -25,7 +25,8 @@ executable l1c
                   mtl,
                   optparse-applicative >= 0.18.1.0,
                   parser-combinators,
-                  transformers
+                  transformers,
+                  text
     other-modules:
                   Args,
                   Compile,
@@ -41,6 +42,8 @@ executable l1c
                   Compile.IR.IRGraph,
                   Compile.IR.ControlFlow,
                   Compile.IR.GraphConstructor,
+                  Compile.IR.RegAlloc,
+                  Compile.Backend.Schedule,
                   Compile.Backend.Asm,
                   Compile.Backend.X86.X86,
                   Compile.Backend.X86.Register,

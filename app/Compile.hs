@@ -7,8 +7,8 @@ import Compile.Backend.Asm (codeGen)
 import Compile.Frontend.Parser (parseAST)
 import Compile.Semantic.Semantic (semanticAnalysis)
 import Compile.Backend.X86.X86 (printX86)
+import Compile.Backend.Schedule (schedule)
 import Compile.IR.SSA (irTranslate)
-import Compile.IR.ControlFlow (buildCFG)
 import Error (L1ExceptT)
 
 import Control.Monad.IO.Class
@@ -25,7 +25,7 @@ compile job = do
   semanticAnalysis ast
   let ir = irTranslate ast
   liftIO $ print ir
-  let cfg = buildCFG ir
-      code = codeGen cfg
+  liftIO $ print (schedule ir)
+  let code = codeGen ir
   liftIO $ writeFile (out job) (printX86 code)
   return ()

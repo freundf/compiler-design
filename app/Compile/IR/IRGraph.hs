@@ -8,13 +8,14 @@ module Compile.IR.IRGraph
   , BinOp(..)
   , UnOp(..)
   , Value(..)
-  , startGraph
+  , newGraph
   , predecessors
   , addPredecessor
   , addSuccessor
   , addNode
   , isTerminator
   , getBlocks
+  , getNode
   ) where
 
   
@@ -27,7 +28,7 @@ import           Data.List (intercalate)
 
 type NodeId = Int
 type Name = String
-data ProjInfo = Result | SideEffect
+data ProjInfo = Result | SideEffect | CondTrue | CondFalse
   deriving (Eq, Show)
 
 data Node = Node
@@ -44,8 +45,10 @@ data NodeType
   | BinOpNode { binOp :: BinOp, left :: NodeId, right :: NodeId, sideEffect :: Maybe NodeId }
   | UnOpNode { unOp :: UnOp, expr :: NodeId }
   | Proj { expr :: NodeId, projInfo :: ProjInfo }
-  | Phi { preds :: [NodeId] }
-  | Branch { cond :: NodeId, trueBlk :: NodeId, falseBlk :: NodeId }
+  | Phi { preds :: [NodeId], isSE :: Bool }
+  | Cond { cond :: NodeId }
+  | Jump
+  | Exit
   deriving (Eq, Show)
   
 data Value = IntVal Int | BoolVal Bool
@@ -75,19 +78,17 @@ data IRGraph = IRGraph
   
 
   
-startGraph :: IRGraph
-startGraph = IRGraph
-  { name = "main"
+newGraph :: String -> IRGraph
+newGraph name = IRGraph
+  { name = name
   , successors = IntMap.empty
-  , startBlock = 0
-  , endBlock = 1
-  , nodes = IntMap.fromList [((nid firstBlock), firstBlock), ((nid lastBlock), lastBlock), ((nid startNode), startNode)]
+  , startBlock = nid firstBlock
+  , endBlock = nid lastBlock
+  , nodes = IntMap.fromList [(nid firstBlock, firstBlock), (nid lastBlock, lastBlock)]
   }
   where
     firstBlock = Node 0 0 (Block [])
     lastBlock = Node 1 1 (Block [])
-    
-    startNode = Node 2 0 (Start)
   
 predecessors :: Node -> [NodeId]
 predecessors n =
@@ -99,8 +100,10 @@ predecessors n =
     BinOpNode _ l r _ -> [l, r]
     UnOpNode _ e -> [e]
     Proj e _ -> [e]
-    Phi ps -> ps
-    Branch c t f -> [c]
+    Phi ps _ -> ps
+    Cond c -> [c]
+    Jump -> []
+    Exit -> []
     
 addNode :: IRGraph -> Node -> IRGraph
 addNode graph node =
@@ -122,7 +125,7 @@ addPredecessor graph nodeId predId =
     Just node ->
       let updatedNode = case nType node of
             Block ps -> node { nType = Block (ps ++ [predId]) }
-            Phi ps -> node { nType = Phi (ps ++ [predId]) }
+            Phi ps se -> node { nType = Phi (ps ++ [predId]) se }
             _ -> error ("Can't add predecessor to node of type " ++ show (nType node))
           updatedNodes = IntMap.insert (nodeId) updatedNode (nodes graph)
       in addSuccessor (graph { nodes = updatedNodes }) predId nodeId
@@ -136,6 +139,11 @@ getBlocks = map nid . filter isBlock . IntMap.elems . nodes
 
 isTerminator :: Node -> Bool
 isTerminator n = case nType n of
-  Branch _ _ _ -> True
+  Cond _ -> True
   Return _ _ -> True
+  Jump     -> True
+  Exit      -> True
   _        -> False
+
+getNode :: IRGraph -> NodeId -> Node
+getNode g n = (nodes g) IntMap.! n

@@ -2,7 +2,7 @@ module Compile.IR.Liveness
   ( liveness, livenessGraph
   ) where
 
-import           Compile.Backend.X86
+import           Compile.Backend.X86.X86
 
 import           Prelude hiding (succ)
 import           Data.Map (Map)
@@ -11,7 +11,7 @@ import           Data.Set (Set)
 import qualified Data.Set as Set
 import           Control.Monad (foldM, when, zipWithM_)
 import           Control.Monad.State
-import Compile.GraphColoring
+import Compile.IR.GraphColoring
 
 type Var = Opnd
 type Line = Integer

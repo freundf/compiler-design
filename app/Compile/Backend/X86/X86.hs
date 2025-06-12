@@ -25,13 +25,21 @@ prologue =
   , Mov rdi64 rax64
   , Mov rax64 (Imm "0x3C")
   , Syscall
-  , Nop
-  , Label "_main"
   ]
 
 
---registers :: [Opnd]
---registers = [Reg R8, Reg R9, Reg R10, Reg R11, Reg R12, Reg R13, Reg R14, Reg R15] ++ [Mem RBP (-8 * i) | i <- [1..]]
+registers :: [Opnd]
+registers =
+  [ Reg (Register R8 Size32)
+  , Reg (Register R9 Size32)
+  , Reg (Register R10 Size32)
+  , Reg (Register R11 Size32)
+  , Reg (Register R12 Size32)
+  , Reg (Register R13 Size32)
+  , Reg (Register R14 Size32)
+  , Reg (Register R15 Size32)
+  ]
+  ++ [Mem (Register RBP Size32) (-8 * i) | i <- [1..]]
 
 allocStack :: Integer -> [Instr]
 allocStack size
@@ -53,7 +61,7 @@ printX86 x86 = show (directives x86) ++ (unlines . map show $ code x86)
 
 
 instance Show Directives where
-  show d = showSyntax ++ showGlobals ++ ".text \n"
+  show d = showSyntax ++ showGlobals ++ ".text \n\n"
     where
       showSyntax = case syntax d of
         Intel -> ".intel_syntax noprefix \n"

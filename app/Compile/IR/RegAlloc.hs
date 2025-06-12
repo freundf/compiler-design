@@ -1,10 +1,10 @@
 module Compile.IR.RegAlloc
-  ( regAlloc, naiveStrategy, coloringStrategy
+  ( regAlloc, naiveStrategy
   ) where
 
-import           Compile.Backend.X86
-import           Compile.IR.Liveness
-import           Compile.IR.GraphColoring
+import           Compile.Backend.X86.X86
+import           Compile.Backend.X86.Register
+import           Compile.Backend.X86.Instruction
 
 import           Control.Monad.State
 import           Data.Map (Map)
@@ -17,17 +17,17 @@ type RegAlloc = Map Opnd Opnd
 
 data AllocState = AllocState
   { regMap :: Map Opnd Opnd
-  , code :: [Instr]
+  , x86Code :: [Instr]
   }
 
 initialState :: RegAlloc -> AllocState
 initialState regs = AllocState
   { regMap = regs
-  , code = []
+  , x86Code = []
   }
 
 emit :: Instr -> Allocator ()
-emit instr = modify $ \s -> s { code = code s ++ [instr] }
+emit instr = modify $ \s -> s { x86Code = x86Code s ++ [instr] }
 
 processInstr :: Instr -> Allocator ()
 processInstr (Mov o1 o2) = do
@@ -36,11 +36,11 @@ processInstr (Mov o1 o2) = do
   let r2 = getReg o2 regs
   case (r1, r2) of
     (Mem _ _, Mem _ _) -> do
-      emit $ Mov (Reg ECX) r2
-      emit $ Mov r1 (Reg ECX)
+      emit $ Mov rcx32 r2
+      emit $ Mov r1 rcx32
     (Mem _ _, Imm _) -> do
-      emit $ Mov (Reg ECX) r2
-      emit $ Mov r1 (Reg ECX)
+      emit $ Mov rcx32 r2
+      emit $ Mov r1 rcx32
     _ -> emit $ Mov r1 r2
 processInstr (Add o1 o2) = processBinOp Add o1 o2
 processInstr (Sub o1 o2) = processBinOp Sub o1 o2
@@ -50,18 +50,19 @@ processInstr (Idiv o) = do
     let r = getReg o regs
     case r of
       (Mem _ _) -> do
-        emit $ Mov (Reg ECX) r
-        emit $ Idiv (Reg ECX)
+        emit $ Mov rcx32 r
+        emit $ Idiv rcx32
       _ -> emit $ Idiv r
 processInstr (Neg o) = do
     regs <- gets regMap
     let r = getReg o regs
     case r of
       (Mem _ _) -> do
-        emit $ Mov (Reg ECX) r
-        emit $ Neg (Reg ECX)
-        emit $ Mov r (Reg ECX)
+        emit $ Mov rcx32 r
+        emit $ Neg rcx32
+        emit $ Mov r rcx32
       _ -> emit (Neg r)
+processInstr (Cmp o1 o2) = processBinOp Cmp o1 o2
 processInstr instr = emit instr
 
 processBinOp :: (Opnd -> Opnd -> Instr) -> Opnd -> Opnd -> Allocator ()
@@ -71,9 +72,9 @@ processBinOp instr o1 o2 = do
     let r2 = getReg o2 regs
     case (r1, r2) of
       (Mem _ _, _) -> do
-        emit $ Mov (Reg ECX) r1
-        emit $ instr (Reg ECX) r2
-        emit $ Mov r1 (Reg ECX)
+        emit $ Mov rcx32 r1
+        emit $ instr rcx32 r2
+        emit $ Mov r1 rcx32
       _ -> emit $ instr r1 r2
 
 
@@ -82,18 +83,18 @@ getReg reg = Map.findWithDefault reg reg
 
 
 regAlloc :: X86 -> RegAlloc -> X86
-regAlloc instrs strategy = reserveStack stackUsed (code finalState)
+regAlloc (X86 d instr) strategy = (X86 d) $ reserveStack stackUsed (x86Code finalState)
   where
-    finalState = execState (mapM_ processInstr instrs) (initialState strategy)
+    finalState = execState (mapM_ processInstr instr) (initialState strategy)
     stackUsed = maximum . map (abs . getOffset . snd) . Map.toList $ strategy
     getOffset (Mem _ offset) = offset
     getOffset _ = 0
     
-coloringStrategy :: X86 -> RegAlloc
-coloringStrategy instrs = colorGraph registers (livenessGraph (liveness instrs))
+--coloringStrategy :: X86 -> RegAlloc
+--coloringStrategy instrs = colorGraph registers (livenessGraph (liveness instrs))
 
-reserveStack :: Integer -> X86 -> X86
-reserveStack s instr = allocStack s ++ reserveStack' s instr
+reserveStack :: Integer -> [Instr] -> [Instr]
+reserveStack s instr = (head instr) : allocStack s ++ reserveStack' s (tail instr)
   where
     reserveStack' _ [] = []
     reserveStack' s' (i:is) = case i of
@@ -102,12 +103,12 @@ reserveStack s instr = allocStack s ++ reserveStack' s instr
 
 naiveStrategy :: Integer -> RegAlloc
 naiveStrategy maxOffset = Map.fromList $ [
-        (VirtReg 0, Reg R8),
-        (VirtReg 1, Reg R9),
-        (VirtReg 2, Reg R10),
-        (VirtReg 3, Reg R11),
-        (VirtReg 4, Reg R12),
-        (VirtReg 5, Reg R13),
-        (VirtReg 6, Reg R14),
-        (VirtReg 7, Reg R15)
-    ] ++ [(VirtReg (i + 7), Mem RBP (- (8 * i))) | i <- [1 .. (maxOffset - 7)]]
+        (VirtReg 0, Reg (Register R8 Size32)),
+        (VirtReg 1, Reg (Register R9 Size32)),
+        (VirtReg 2, Reg (Register R10 Size32)),
+        (VirtReg 3, Reg (Register R11 Size32)),
+        (VirtReg 4, Reg (Register R12 Size32)),
+        (VirtReg 5, Reg (Register R13 Size32)),
+        (VirtReg 6, Reg (Register R14 Size32)),
+        (VirtReg 7, Reg (Register R15 Size32))
+    ] ++ [(VirtReg (i + 7), Mem (Register RBP Size64) (- (8 * i))) | i <- [1 .. (maxOffset - 7)]]

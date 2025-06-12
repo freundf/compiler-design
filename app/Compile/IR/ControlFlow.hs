@@ -50,7 +50,7 @@ buildCFG graph = ControlFlowGraph
   
   
 groupNodes :: IntMap Node -> IntMap [Node]
-groupNodes = IntMap.filter (not . (== 1) . length) . IntMap.foldr insertFn IntMap.empty
+groupNodes = IntMap.foldr insertFn IntMap.empty
   where
     insertFn n acc = IntMap.insertWith (++) (block n) [n] acc
     
