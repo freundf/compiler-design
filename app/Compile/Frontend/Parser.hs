@@ -57,7 +57,7 @@ innerBlock = do
   return $ InnerBlock blk pos
 
 stmt :: Parser Stmt
-stmt = try simp <|> try control <|> innerBlock
+stmt = try innerBlock <|> try control <|> simp
 
 control :: Parser Stmt
 control = try cIf <|> try cWhile <|> try cFor <|> try cContinue <|> try cBreak <|> ret
@@ -75,11 +75,11 @@ cFor = do
   pos <- getSourcePos
   reserved "for"
   (fInit, cond, step) <- parens $ do
-    fInit <- optional simp
+    fInit <- optional simp'
     semi
     cond <- expr
     semi
-    step <- optional simp
+    step <- optional simp'
     return (fInit, cond, step)
   body <- stmt
   return $ For fInit cond step body pos
@@ -142,6 +142,11 @@ declInit = do
   void $ symbol "="
   e <- expr
   return $ Init t name e pos
+
+simp' :: Parser Stmt
+simp' = do
+  s <- try asgn <|> decl
+  return s
 
 simp :: Parser Stmt
 simp = do
