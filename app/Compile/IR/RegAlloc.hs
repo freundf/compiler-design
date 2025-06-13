@@ -30,41 +30,38 @@ emit :: Instr -> Allocator ()
 emit instr = modify $ \s -> s { x86Code = x86Code s ++ [instr] }
 
 processInstr :: Instr -> Allocator ()
-processInstr (Mov o1 o2) = do
-  regs <- gets regMap
-  let r1 = getReg o1 regs
-  let r2 = getReg o2 regs
-  case (r1, r2) of
-    (Mem _ _, Mem _ _) -> do
-      emit $ Mov rcx32 r2
-      emit $ Mov r1 rcx32
-    (Mem _ _, Imm _) -> do
-      emit $ Mov rcx32 r2
-      emit $ Mov r1 rcx32
-    _ -> emit $ Mov r1 r2
-processInstr (Add o1 o2) = processBinOp Add o1 o2
-processInstr (Sub o1 o2) = processBinOp Sub o1 o2
-processInstr (Imul o1 o2) = processBinOp Imul o1 o2
-processInstr (Idiv o) = do
-    regs <- gets regMap
-    let r = getReg o regs
-    case r of
-      (Mem _ _) -> do
-        emit $ Mov rcx32 r
-        emit $ Idiv rcx32
-      _ -> emit $ Idiv r
-processInstr (Neg o) = do
-    regs <- gets regMap
-    let r = getReg o regs
-    case r of
-      (Mem _ _) -> do
-        emit $ Mov rcx32 r
-        emit $ Neg rcx32
-        emit $ Mov r rcx32
-      _ -> emit (Neg r)
-processInstr (Cmp o1 o2) = processBinOp Cmp o1 o2
-processInstr instr = emit instr
-
+processInstr instr = case instr of
+  Mov o1 o2 -> processMov o1 o2
+  Movzx o1 o2 -> processBinOp Movzx o1 o2
+  
+  Add o1 o2 -> processBinOp Add o1 o2
+  Sub o1 o2 -> processBinOp Sub o1 o2
+  Imul o1 o2 -> processBinOp Imul o1 o2
+  Idiv o -> processIdiv o
+  Neg o -> processUnary Neg o
+  Cdq -> emit instr
+  
+  And o1 o2 -> processBinOp And o1 o2
+  Or o1 o2 -> processBinOp Or o1 o2
+  Xor o1 o2 -> processBinOp Xor o1 o2
+  Not o -> processUnary Not o
+  
+  Sall o1 o2 -> processBinOp Sall o1 o2
+  Sarl o1 o2 -> processBinOp Sarl o1 o2
+  
+  Cmp o1 o2 -> processBinOp Cmp o1 o2
+  Setl o -> processUnary Setl o
+  Setle o -> processUnary Setle o
+  Setg o -> processUnary Setg o
+  Setge o -> processUnary Setge o
+  Sete o -> processUnary Sete o
+  Setne o -> processUnary Setne o
+  
+  Push o -> processUnary Push o
+  Pop o -> processUnary Pop o
+  
+  _ -> emit instr
+  
 processBinOp :: (Opnd -> Opnd -> Instr) -> Opnd -> Opnd -> Allocator ()
 processBinOp instr o1 o2 = do
     regs <- gets regMap
@@ -77,7 +74,41 @@ processBinOp instr o1 o2 = do
         emit $ Mov r1 rcx32
       _ -> emit $ instr r1 r2
 
+processUnary :: (Opnd -> Instr) -> Opnd -> Allocator ()
+processUnary instr o = do
+  regs <- gets regMap
+  let r = getReg o regs
+  case r of
+    Mem _ _ -> do
+      emit $ Mov rcx32 r
+      emit $ instr rcx32
+      emit $ Mov r rcx32
+    _ -> emit $ instr r
 
+processMov :: Opnd -> Opnd -> Allocator ()
+processMov o1 o2 = do
+  regs <- gets regMap
+  let r1 = getReg o1 regs
+  let r2 = getReg o2 regs
+  case (r1, r2) of
+    (Mem _ _, Mem _ _) -> do
+      emit $ Mov rcx32 r2
+      emit $ Mov r1 rcx32
+    (Mem _ _, Imm _) -> do
+      emit $ Mov rcx32 r2
+      emit $ Mov r1 rcx32
+    _ -> emit $ Mov r1 r2
+      
+processIdiv :: Opnd -> Allocator ()
+processIdiv o = do
+  regs <- gets regMap
+  let r = getReg o regs
+  case r of
+    (Mem _ _) -> do
+      emit $ Mov rcx32 r
+      emit $ Idiv rcx32
+    _ -> emit $ Idiv r
+    
 getReg :: (Ord a) => a -> Map a a -> a
 getReg reg = Map.findWithDefault reg reg
 
