@@ -22,8 +22,8 @@ data Instr
   | Xor    Opnd Opnd      -- xor  src, dst    (bitwise XOR)
   | Not    Opnd
   -- Shift
-  | Shl    Opnd Opnd      -- shl  amt, dst    (logical left shift; amt can be “1” or “cl”)
-  | Shr    Opnd Opnd      -- shr  amt, dst    (logical right shift)
+  | Sall    Opnd Opnd
+  | Sarl    Opnd Opnd
   
   -- Setcc / Comparison
   | Cmp    Opnd Opnd      -- cmp  lhs, rhs    (sets flags lhs–rhs)
@@ -83,8 +83,8 @@ instance Show Instr where
   show (Xor o1 o2)    = "  xor " ++ show o1 ++ ", " ++ show o2
   
   -- Shift
-  show (Shl amt dst)  = "  shl " ++ show amt ++ ", " ++ show dst
-  show (Shr amt dst)  = "  shr " ++ show amt ++ ", " ++ show dst
+  show (Sall amt dst)  = "  sall " ++ show amt ++ ", " ++ show dst
+  show (Sarl amt dst)  = "  sarl " ++ show amt ++ ", " ++ show dst
   
   -- Setcc / Comparison
   show (Cmp o1 o2)    = "  cmp "  ++ show o1 ++ ", " ++ show o2

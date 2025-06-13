@@ -124,11 +124,11 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
       IR.Shl -> do
         emit' $ Mov dst lhs
         emit' $ Mov rcx32 rhs
-        emit' $ Shl rcx8 dst
+        emit' $ Sall rcx8 dst
       IR.Shr -> do
         emit' $ Mov dst lhs
         emit' $ Mov rcx32 rhs
-        emit' $ Mov rcx8 dst
+        emit' $ Sarl rcx8 dst
         
       IR.BitAnd -> emit' (Mov dst lhs) >> emit' (And dst rhs)
       IR.BitOr -> emit' (Mov dst lhs) >> emit' (Or dst rhs)
@@ -188,6 +188,13 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
         mapM_ (emitPhiMove r) ps
   
   Exit -> emit' Ret
+ 
+  Proj { expr = e, projInfo = info } -> do
+    case info of
+      Result -> do
+        r <- lookupReg e
+        assignReg thisId r
+      _ -> pure ()
  
   _ -> pure ()
   where
