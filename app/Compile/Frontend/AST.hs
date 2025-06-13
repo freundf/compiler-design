@@ -3,6 +3,7 @@ module Compile.Frontend.AST
   , Block(..)
   , Stmt(..)
   , Expr(..)
+  , AsgnOp(..)
   , BinOp(..)
   , UnOp(..)
   , Type(..)
@@ -10,6 +11,7 @@ module Compile.Frontend.AST
   , unOpType
   , binOpType
   , posPretty
+  , SourcePos
   ) where
 
 import Data.List (intercalate)
