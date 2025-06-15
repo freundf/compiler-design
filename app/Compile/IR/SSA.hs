@@ -261,7 +261,32 @@ translateExpr expr = case expr of
             node <- nid <$> newBinOp bop lhs rhs Nothing
             pure node
     
-  AST.Ternary cond thenExpr elseExpr -> error "not implemented"
+  AST.Ternary cond thenExpr elseExpr -> do
+    blk <- gets currentBlock
+    cNode <- translateExpr cond
+    ifNode <- nid <$> newIf cNode
+    trueProj <- nid <$> newProj ifNode CondTrue
+    falseProj <- nid <$> newProj ifNode CondFalse
+    sealBlock blk
+    
+    thenBlk <- nid <$> newBlock [trueProj]
+    elseBlk <- nid <$> newBlock [falseProj]
+    sealBlock thenBlk
+    sealBlock elseBlk
+    
+    setCurrentBlock thenBlk
+    tExpr <- translateExpr thenExpr
+    tJump <- nid <$> newJump
+    
+    setCurrentBlock elseBlk
+    eExpr <- translateExpr elseExpr
+    eJump <- nid <$> newJump
+    
+    mergeBlk <- nid <$> newBlock [tJump, eJump]
+    sealBlock mergeBlk
+    setCurrentBlock mergeBlk
+    nid <$> newPhi mergeBlk [tExpr, eExpr] False
+    
   
 translateBinOp :: AST.BinOp -> BinOp
 translateBinOp op = case op of
@@ -293,9 +318,31 @@ translateUnOp op = case op of
   _ -> error ("Unknown unary operator: " ++ show op)
   
 translateShortCircuit :: BinOp -> AST.Expr -> AST.Expr -> GraphConstructor NodeId
-translateShortCircuit op e1 e2 = error "not implemented"
-
-      
+translateShortCircuit op e1 e2 = do
+  blk <- gets currentBlock
+  lhs <- translateExpr e1
+  ifNode <- nid <$> newIf lhs
+  trueProj <- nid <$> newProj ifNode CondTrue
+  falseProj <- nid <$> newProj ifNode CondFalse
+  sealBlock blk
+  
+  
+  let branches = case op of
+                  And -> (trueProj, falseProj)
+                  Or -> (falseProj, trueProj)
+                  _ -> error ("invalid short circuting for operator " ++ show op)
+    
+  rhsBlk <- nid <$> newBlock [fst branches]
+  sealBlock rhsBlk
+  setCurrentBlock rhsBlk
+  rhs <- translateExpr e2
+  rhsJump <- nid <$> newJump
+  
+  mergeBlk <- nid <$> newBlock [snd branches, rhsJump]
+  sealBlock mergeBlk
+  setCurrentBlock mergeBlk
+  nid <$> newPhi mergeBlk [lhs, rhs] False
+  
 projResultSE :: NodeId -> GraphConstructor NodeId
 projResultSE n = do
   projSE <- nid <$> newProj n SideEffect
