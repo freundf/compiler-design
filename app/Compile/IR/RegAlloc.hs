@@ -144,4 +144,4 @@ naiveStrategy maxOffset = Map.fromList $ [
         (VirtReg 4, Reg (Register R13 Size32)),
         (VirtReg 5, Reg (Register R14 Size32)),
         (VirtReg 6, Reg (Register R15 Size32))
-      ] ++ [(VirtReg (i + 6), Mem (Register RBP Size64) (- (8 * i))) | i <- [1 .. (maxOffset - 7)]]
+      ] ++ [(VirtReg (i + 6), Mem (Register RBP Size64) (- (8 * i))) | i <- [1 .. (maxOffset - 6)]]

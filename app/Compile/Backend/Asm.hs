@@ -59,6 +59,7 @@ preAlloc graph = Map.fromList $ zip ns (map VirtReg [0..])
       BinOpNode {} -> True
       UnOpNode {} -> True
       Phi {} -> True
+      Proj {} -> True
       Cond {} -> True
       _ -> False
       
@@ -208,8 +209,9 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
   Proj { expr = e, projInfo = info } -> do
     case info of
       Result -> do
-        r <- lookupReg e
-        assignReg thisId r
+        r1 <- lookupReg thisId
+        r2 <- lookupReg e
+        emit' $ Mov r1 r2
       _ -> pure ()
  
   _ -> pure ()
