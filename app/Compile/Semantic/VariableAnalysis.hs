@@ -14,6 +14,9 @@ varStatusAnalysis = defaultHandler
   { hInit = varStatusInit
   , hAsgn = varStatusAsgn
   , hIdent = varStatusIdent
+  , hRet = varStatusRet
+  , hBreak = varStatusBreak
+  , hContinue = varStatusContinue
   }
 
 varStatusInit :: Type -> String -> Expr -> SourcePos -> Semantic ()
@@ -36,3 +39,11 @@ varStatusIdent name pos = do
   unless initialized $
     semanticFail' $ "Use of uninitialized variable '" ++ name ++ "' at " ++ posPretty pos
 
+varStatusRet :: Expr -> SourcePos -> Semantic ()
+varStatusRet _ _ = initializeAll
+
+varStatusBreak :: SourcePos -> Semantic ()
+varStatusBreak _ = initializeAll
+
+varStatusContinue :: SourcePos -> Semantic ()
+varStatusContinue _ = initializeAll

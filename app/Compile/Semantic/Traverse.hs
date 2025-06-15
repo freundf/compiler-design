@@ -6,6 +6,7 @@ import Error (L1ExceptT)
 
 import Control.Monad.State
 import Control.Monad (when)
+import Data.List (foldl')
 
 import Text.Megaparsec (SourcePos)
 
@@ -101,15 +102,14 @@ traverseStmt order handler stmt = case stmt of
     
   For mInit cond mStep body pos -> do
     withOrder order (hFor handler mInit cond mStep body pos) $ do
-      inScope $ do
-        case mInit of
-          Just initStmt -> traverseStmt' initStmt
-          Nothing -> pure ()
-        traverseExpr' cond
-        case mStep of
-          Just stepStmt -> traverseStmt' stepStmt
-          Nothing -> pure ()
-        inLoop $ traverseStmt' body
+      case mInit of
+        Just initStmt -> traverseStmt' initStmt
+        Nothing -> pure ()
+      traverseExpr' cond
+      case mStep of
+        Just stepStmt -> traverseStmt' stepStmt
+        Nothing -> pure ()
+      inScope $ inLoop $ traverseStmt' body
     
   If cond thenStmt mElse pos -> do
     withOrder order (hIf handler cond thenStmt mElse pos) $ do
@@ -187,4 +187,4 @@ combineHandlers h1 h2 = Handler
 
 
 chainHandlers :: Monad m => [Handler m] -> Handler m
-chainHandlers = foldl combineHandlers defaultHandler
+chainHandlers = foldl' combineHandlers defaultHandler

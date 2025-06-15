@@ -14,6 +14,7 @@ analyseFor = defaultHandler
 checkForStep :: Maybe Stmt -> Expr -> Maybe Stmt -> Stmt -> SourcePos -> Semantic ()
 checkForStep _ _ mStep _ _ = case mStep of
   Just stepStmt -> case stepStmt of
-     Decl _ name pos -> semanticFail' ("Can't declare '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
-     _ -> pure ()
+    Decl _ name pos -> semanticFail' ("Can't declare '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
+    Init _ name _ pos -> semanticFail' ("Can't initialize '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
+    _ -> pure ()
   Nothing -> pure ()

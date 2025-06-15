@@ -41,7 +41,7 @@ registers =
   ]
   ++ [Mem (Register RBP Size32) (-8 * i) | i <- [1..]]
 
-allocStack :: Integer -> [Instr]
+allocStack :: Int -> [Instr]
 allocStack size
   | size == 0 = []
   | otherwise = [ Push rbp64
@@ -49,7 +49,7 @@ allocStack size
                 , Sub rsp64 (Imm (show size))
                 ]
 
-freeStack :: Integer -> [Instr]
+freeStack :: Int -> [Instr]
 freeStack size
   | size == 0 = []
   | otherwise = [ Mov rsp64 rbp64

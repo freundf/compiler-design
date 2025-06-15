@@ -11,6 +11,7 @@ module Compile.Semantic.Util
   , updateVar
   , inScope
   , inLoop
+  , initializeAll
   ) where
 
 import Compile.Frontend.AST (Type, posPretty)
@@ -70,6 +71,12 @@ insertVar name info pos = do
         then semanticFail' $ "Redeclaration of '" ++ name ++ "' at " ++ posPretty pos
         else put ctx { scopes = Map.insert name info cur : rest }
 
+initializeAll :: Semantic ()
+initializeAll = do
+  scope <- gets (head . scopes)
+  let newScope = Map.map (\(VarInfo ty _) -> VarInfo ty True) scope
+  modify $ \s -> s { scopes = newScope : (tail (scopes s)) }
+
 updateVar :: String -> VarInfo -> Semantic ()
 updateVar name info = do
   scps <- gets scopes
@@ -88,7 +95,9 @@ inLoop m = do
 
 inScope :: Semantic a -> Semantic a
 inScope m = do
-  modify $ \s -> s { scopes = Map.empty : scopes s}
+  ss <- gets scopes
+  let newScope = if null ss then Map.empty else head ss
+  modify $ \s -> s { scopes = newScope : scopes s}
   res <- m
   modify $ \s -> s { scopes = tail (scopes s) }
   return res

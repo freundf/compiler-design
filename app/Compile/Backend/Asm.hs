@@ -11,6 +11,7 @@ import qualified Compile.IR.IRGraph as IR
 import Compile.IR.RegAlloc
 
 import           Control.Monad.State
+import           Control.Monad (forM_)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.IntMap (IntMap)
@@ -28,16 +29,18 @@ data CodeGenState = CodeGenState
   { regMap :: Map NodeId Opnd
   , order :: Schedule
   , irGraph :: IRGraph
-  , nextReg :: Integer
+  , nextReg :: Int
   , currentBlock :: Int
   , codeBlocks :: IntMap [Instr]
+  , phiMoves :: IntMap [Instr]
   }
   
 codeGen :: IRGraph -> X86
 codeGen ir = regAlloc ((X86 defaultDirectives) . (prologue ++) . concatMap flattenBlock $ schedule ir) strategy
   where
     order = schedule ir
-    initialState = CodeGenState Map.empty order ir 0 0 IntMap.empty
+    regs = preAlloc ir
+    initialState = CodeGenState regs order ir (Map.size regs) 0 IntMap.empty IntMap.empty
     genBlocks = do
       mapM_ genBlock order
       mapM_ genTerminator order
@@ -47,6 +50,18 @@ codeGen ir = regAlloc ((X86 defaultDirectives) . (prologue ++) . concatMap flatt
     
     flattenBlock bb = IntMap.findWithDefault [] (bid bb) (codeBlocks finalState)
 
+preAlloc :: IRGraph -> Map NodeId Opnd
+preAlloc graph = Map.fromList $ zip ns (map VirtReg [0..])
+  where
+    ns = map nid . filter needsRegister . IntMap.elems . nodes $ graph
+    needsRegister n = case nType n of
+      ConstNode {} -> True
+      BinOpNode {} -> True
+      UnOpNode {} -> True
+      Phi {} -> True
+      Cond {} -> True
+      _ -> False
+      
 freshReg :: CodeGen Opnd
 freshReg = do
   n <- gets nextReg
@@ -80,25 +95,27 @@ genBlock bb = do
   mapM_ genNode (blockNodes bb)
   
 genTerminator :: BasicBlock -> CodeGen ()
-genTerminator bb = genNode (blockTerminator bb)
+genTerminator bb = do
+  let b = bid bb
+  phis <- gets (IntMap.findWithDefault [] b . phiMoves)
+  mapM_ (emit b) phis
+  genNode (blockTerminator bb)
   
 genNode :: Node -> CodeGen ()
 genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
   ConstNode (IntVal x) -> do
-    dst <- freshReg
+    dst <- lookupReg thisId
     emit' $ Mov dst (Imm (show x))
-    assignReg thisId dst
     
   ConstNode (BoolVal b) -> do
-    dst <- freshReg
+    dst <- lookupReg thisId
     let imm = if b then Imm "1" else Imm "0"
     emit' $ Mov dst imm
-    assignReg thisId dst
     
   BinOpNode { binOp = op, left = l, right = r } -> do
     lhs <- lookupReg l
     rhs <- lookupReg r
-    dst <- freshReg
+    dst <- lookupReg thisId
     case op of
       IR.Add -> emit' (Mov dst lhs) >> emit' (Add dst rhs)
       IR.Sub -> emit' (Mov dst lhs) >> emit' (Sub dst rhs)
@@ -124,11 +141,11 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
       IR.Shl -> do
         emit' $ Mov dst lhs
         emit' $ Mov rcx32 rhs
-        emit' $ Sall rcx8 dst
+        emit' $ Sall dst rcx8
       IR.Shr -> do
         emit' $ Mov dst lhs
         emit' $ Mov rcx32 rhs
-        emit' $ Sarl rcx8 dst
+        emit' $ Sarl dst rcx8
         
       IR.BitAnd -> emit' (Mov dst lhs) >> emit' (And dst rhs)
       IR.BitOr -> emit' (Mov dst lhs) >> emit' (Or dst rhs)
@@ -136,11 +153,10 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
       
       _ -> error ("Can't generate Code for binary operator: " ++ show op)
         
-    assignReg thisId dst
     
   UnOpNode { unOp = op, expr = e } -> do
     rhs <- lookupReg e
-    dst <- freshReg
+    dst <- lookupReg thisId
     case op of
       IR.Neg -> emit' (Mov dst rhs) >> emit' (Neg dst)
       IR.BitNot -> emit' (Mov dst rhs) >> emit' (Not dst)
@@ -149,7 +165,6 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
         emit' $ Sete rcx8
         emit' $ Movzx rcx32 rcx8
         emit' $ Mov dst rcx32
-    assignReg thisId dst
     
   Jump -> do
     ir <- gets irGraph
@@ -165,7 +180,7 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
         falseTarget = blockLabel . block . (getNode ir) . head . IntSet.toList $ succs IntMap.! falseProj
     
     c <- lookupReg cond
-    r <- freshReg
+    r <- lookupReg thisId
     emit' $ Mov r c
     emit' $ Cmp r (Imm "1")
     emit' $ Je trueTarget
@@ -182,10 +197,11 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
       then pure ()
       else do
         ir <- gets irGraph
-        blk <- gets currentBlock
-        r <- freshReg
-        assignReg thisId r
-        mapM_ (emitPhiMove r) ps
+        r <- lookupReg thisId
+        forM_ ps $ \p -> do
+          src <- lookupReg p
+          let predBlk = block (getNode ir p)
+          modify $ \s -> s { phiMoves = IntMap.insertWith (++) predBlk [Mov r src] (phiMoves s) }
   
   Exit -> emit' Ret
  
@@ -200,7 +216,6 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
   where
     emit' = emit bid
     
-    
  
 emitPhiMove :: Opnd -> NodeId -> CodeGen ()
 emitPhiMove r n = do
@@ -211,7 +226,7 @@ emitPhiMove r n = do
   
 emitComp :: BlockId -> (Opnd -> Instr) -> Opnd -> Opnd -> Opnd -> CodeGen ()
 emitComp bid setcc lhs rhs dst = do
-  emit' $ Cmp rhs lhs
+  emit' $ Cmp lhs rhs
   emit' $ setcc rcx8
   emit' $ Movzx rcx32 rcx8
   emit' $ Mov dst rcx32

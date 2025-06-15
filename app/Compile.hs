@@ -24,7 +24,9 @@ compile job = do
   liftIO $ print ast
   semanticAnalysis ast
   let ir = irTranslate ast
+  liftIO $ print ""
   liftIO $ print ir
+  liftIO $ print ""
   liftIO $ print (schedule ir)
   let code = codeGen ir
   liftIO $ writeFile (out job) (printX86 code)

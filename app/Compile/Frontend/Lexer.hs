@@ -57,11 +57,7 @@ numberLiteral :: Parser String
 numberLiteral = lexeme (try hexLiteral <|> decLiteral <?> "number")
 
 boolLiteral :: Parser Bool
-boolLiteral = do
-  literal <- try (string "true") <|> string "false"
-  return $ case literal of
-    "true" -> True
-    "false" -> False
+boolLiteral = (True <$ reserved "true") <|> (False <$ reserved "false")
 
 -- We want to reject leading zeroes, but `0` itself should of course be accepted
 decLiteral :: Parser String

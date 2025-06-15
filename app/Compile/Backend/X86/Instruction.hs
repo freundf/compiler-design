@@ -56,10 +56,10 @@ data Instr
   deriving (Eq)
 
 data Opnd
-  = VirtReg Integer
+  = VirtReg Int
   | Reg Register
   | Imm String
-  | Mem Register Integer
+  | Mem Register Int
   deriving (Eq, Ord)
   
   
@@ -83,8 +83,8 @@ instance Show Instr where
   show (Xor o1 o2)    = "  xor " ++ show o1 ++ ", " ++ show o2
   
   -- Shift
-  show (Sall amt dst)  = "  sall " ++ show amt ++ ", " ++ show dst
-  show (Sarl amt dst)  = "  sarl " ++ show amt ++ ", " ++ show dst
+  show (Sall amt dst)  = "  sal " ++ show amt ++ ", " ++ show dst
+  show (Sarl amt dst)  = "  sar " ++ show amt ++ ", " ++ show dst
   
   -- Setcc / Comparison
   show (Cmp o1 o2)    = "  cmp "  ++ show o1 ++ ", " ++ show o2

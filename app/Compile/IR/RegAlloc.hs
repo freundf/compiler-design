@@ -25,6 +25,9 @@ initialState regs = AllocState
   { regMap = regs
   , x86Code = []
   }
+  
+transferReg :: Opnd
+transferReg = Reg (Register R8 Size32)
 
 emit :: Instr -> Allocator ()
 emit instr = modify $ \s -> s { x86Code = x86Code s ++ [instr] }
@@ -69,9 +72,9 @@ processBinOp instr o1 o2 = do
     let r2 = getReg o2 regs
     case (r1, r2) of
       (Mem _ _, _) -> do
-        emit $ Mov rcx32 r1
-        emit $ instr rcx32 r2
-        emit $ Mov r1 rcx32
+        emit $ Mov transferReg r1
+        emit $ instr transferReg r2
+        emit $ Mov r1 transferReg
       _ -> emit $ instr r1 r2
 
 processUnary :: (Opnd -> Instr) -> Opnd -> Allocator ()
@@ -80,9 +83,9 @@ processUnary instr o = do
   let r = getReg o regs
   case r of
     Mem _ _ -> do
-      emit $ Mov rcx32 r
-      emit $ instr rcx32
-      emit $ Mov r rcx32
+      emit $ Mov transferReg r
+      emit $ instr transferReg
+      emit $ Mov r transferReg
     _ -> emit $ instr r
 
 processMov :: Opnd -> Opnd -> Allocator ()
@@ -92,11 +95,11 @@ processMov o1 o2 = do
   let r2 = getReg o2 regs
   case (r1, r2) of
     (Mem _ _, Mem _ _) -> do
-      emit $ Mov rcx32 r2
-      emit $ Mov r1 rcx32
+      emit $ Mov transferReg r2
+      emit $ Mov r1 transferReg
     (Mem _ _, Imm _) -> do
-      emit $ Mov rcx32 r2
-      emit $ Mov r1 rcx32
+      emit $ Mov transferReg r2
+      emit $ Mov r1 transferReg
     _ -> emit $ Mov r1 r2
       
 processIdiv :: Opnd -> Allocator ()
@@ -105,8 +108,8 @@ processIdiv o = do
   let r = getReg o regs
   case r of
     (Mem _ _) -> do
-      emit $ Mov rcx32 r
-      emit $ Idiv rcx32
+      emit $ Mov transferReg r
+      emit $ Idiv transferReg
     _ -> emit $ Idiv r
     
 getReg :: (Ord a) => a -> Map a a -> a
@@ -124,7 +127,7 @@ regAlloc (X86 d instr) strategy = (X86 d) $ reserveStack stackUsed (x86Code fina
 --coloringStrategy :: X86 -> RegAlloc
 --coloringStrategy instrs = colorGraph registers (livenessGraph (liveness instrs))
 
-reserveStack :: Integer -> [Instr] -> [Instr]
+reserveStack :: Int -> [Instr] -> [Instr]
 reserveStack s instr = (head instr) : allocStack s ++ reserveStack' s (tail instr)
   where
     reserveStack' _ [] = []
@@ -132,14 +135,13 @@ reserveStack s instr = (head instr) : allocStack s ++ reserveStack' s (tail inst
       Ret -> freeStack s' ++ [Ret] ++ reserveStack' s' is
       _     -> i : reserveStack' s' is
 
-naiveStrategy :: Integer -> RegAlloc
+naiveStrategy :: Int -> RegAlloc
 naiveStrategy maxOffset = Map.fromList $ [
-        (VirtReg 0, Reg (Register R8 Size32)),
-        (VirtReg 1, Reg (Register R9 Size32)),
-        (VirtReg 2, Reg (Register R10 Size32)),
-        (VirtReg 3, Reg (Register R11 Size32)),
-        (VirtReg 4, Reg (Register R12 Size32)),
-        (VirtReg 5, Reg (Register R13 Size32)),
-        (VirtReg 6, Reg (Register R14 Size32)),
-        (VirtReg 7, Reg (Register R15 Size32))
-    ] ++ [(VirtReg (i + 7), Mem (Register RBP Size64) (- (8 * i))) | i <- [1 .. (maxOffset - 7)]]
+        (VirtReg 0, Reg (Register R9 Size32)),
+        (VirtReg 1, Reg (Register R10 Size32)),
+        (VirtReg 2, Reg (Register R11 Size32)),
+        (VirtReg 3, Reg (Register R12 Size32)),
+        (VirtReg 4, Reg (Register R13 Size32)),
+        (VirtReg 5, Reg (Register R14 Size32)),
+        (VirtReg 6, Reg (Register R15 Size32))
+      ] ++ [(VirtReg (i + 6), Mem (Register RBP Size64) (- (8 * i))) | i <- [1 .. (maxOffset - 7)]]

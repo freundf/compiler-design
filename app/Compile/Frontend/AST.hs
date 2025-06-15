@@ -146,6 +146,7 @@ unOpType op
   | op `elem` [Not]         = (TBool, TBool)
   | otherwise               = error $ "unknown unary operation: " ++ show op
   
+-- TODO fix TAny for Eq, Neq
 instance Eq Type where
   TAny  == _      = True
   _     == TAny   = True

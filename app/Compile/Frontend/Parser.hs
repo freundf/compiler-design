@@ -235,6 +235,7 @@ opTable =
   , [ InfixL (BinExpr BitOr  <$ try (symbol "|" <* notFollowedBy (char '|'))) ]
   , [ InfixL (BinExpr And    <$ symbol "&&") ]
   , [ InfixL (BinExpr Or     <$ symbol "||") ]
+  , [ TernR ((Ternary <$ symbol ":") <$ symbol "?") ]
   ]
   where
     -- this allows us to parse `---x` as `-(-(-x))`
@@ -247,15 +248,4 @@ unaryOp = (UnExpr Neg <$ symbol "-")
         <|> (UnExpr BitNot <$ symbol "~")
 
 expr :: Parser Expr
-expr = do
-  e <- makeExprParser expr' opTable <?> "expression"
-  tern <- optional (ternary e)
-  return $ fromMaybe e tern
-  
-ternary :: Expr -> Parser Expr
-ternary cond = try $ do
-  _ <- symbol "?"
-  th <- expr
-  _ <- symbol ":"
-  el <- expr
-  return $ Ternary cond th el
+expr = makeExprParser expr' opTable <?> "expression"
