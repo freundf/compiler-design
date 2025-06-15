@@ -132,21 +132,20 @@ showAsgnOp :: AsgnOp -> String
 showAsgnOp (Just op) = " " ++ show op ++ "= "
 showAsgnOp _ = " = "
 
-binOpType :: BinOp -> ((Type, Type), Type) -- (In, Out)
+binOpType :: BinOp -> ([(Type, Type)], Type) -- (In, Out)
 binOpType op
-  | op `elem` [Mul, Add, Sub, Div, Mod, BitAnd, BitOr, BitXor, Shl, Shr]  = ((TInt, TInt), TInt)
-  | op `elem` [Lt, Leq, Gt, Geq]                                          = ((TInt, TInt), TBool)
-  | op `elem` [Eq, Neq]                                                   = ((TAny, TAny), TBool)
-  | op `elem` [And, Or]                                                   = ((TBool, TBool), TBool)
+  | op `elem` [Mul, Add, Sub, Div, Mod, BitAnd, BitOr, BitXor, Shl, Shr]  = ([(TInt, TInt)], TInt)
+  | op `elem` [Lt, Leq, Gt, Geq]                                          = ([(TInt, TInt)], TBool)
+  | op `elem` [Eq, Neq]                                                   = ([(TInt, TInt), (TBool, TBool)], TBool)
+  | op `elem` [And, Or]                                                   = ([(TBool, TBool)], TBool)
   | otherwise                                                             = error $ "unknown binary operation: " ++ show op
 
-unOpType :: UnOp -> (Type, Type) -- (In, Out)
+unOpType :: UnOp -> ([Type], Type) -- (In, Out)
 unOpType op
-  | op `elem` [Neg, BitNot] = (TInt, TInt)
-  | op `elem` [Not]         = (TBool, TBool)
+  | op `elem` [Neg, BitNot] = ([TInt], TInt)
+  | op `elem` [Not]         = ([TBool], TBool)
   | otherwise               = error $ "unknown unary operation: " ++ show op
   
--- TODO fix TAny for Eq, Neq
 instance Eq Type where
   TAny  == _      = True
   _     == TAny   = True

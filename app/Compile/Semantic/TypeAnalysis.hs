@@ -83,7 +83,7 @@ checkUnExpr :: UnOp -> Expr -> Semantic ()
 checkUnExpr op _ = do
   let (tIn, tOut) = unOpType op
   [t] <- popTypes 1
-  unless (t == tIn) $
+  unless (t `elem` tIn) $
     semanticFail' $ "Unary " ++ show op ++ ": expected " ++ show tIn ++ ", got " ++ show t
   pushType tOut
   
@@ -91,7 +91,7 @@ checkBinExpr :: BinOp -> Expr -> Expr -> Semantic ()
 checkBinExpr op _ _ = do
   let (tIn, tOut) = binOpType op
   [t2, t1] <- popTypes 2
-  unless ((t1, t2) == tIn) $
+  unless ((t1, t2) `elem` tIn) $
     semanticFail' $ "Binary " ++ show op ++ ": expected " ++ show tIn ++ ", got (" ++ show t1 ++ "," ++ show t2 ++ ")"
   pushType tOut
   
