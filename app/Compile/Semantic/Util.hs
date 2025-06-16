@@ -40,6 +40,7 @@ data VarInfo = VarInfo
   
 data Context = Context
   { scopes :: [Scope]
+  , oldScopes :: [Scope]
   , loopDepth :: Int
   , returnType :: Type
   , recordedTypes :: [Type]
@@ -115,5 +116,5 @@ inScope ty m = do
                   else Scope (vars (head ss)) ty
   modify $ \s -> s { scopes = newScope : scopes s}
   res <- m
-  modify $ \s -> s { scopes = tail (scopes s) }
+  modify $ \s -> s { scopes = tail (scopes s), oldScopes = head (scopes s) : (oldScopes s) }
   return res

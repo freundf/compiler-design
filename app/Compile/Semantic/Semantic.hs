@@ -26,7 +26,7 @@ import           Text.Megaparsec.Pos (SourcePos)
 
 semanticAnalysis :: AST -> L1ExceptT ()
 semanticAnalysis ast = do
-  let initialCtx = Context { scopes = [], loopDepth = 0, returnType = TAny, recordedTypes = [] }
+  let initialCtx = Context { scopes = [], oldScopes = [], loopDepth = 0, returnType = TAny, recordedTypes = [] }
       checkVarStatus = chainHandlers [resolveNames, varStatusAnalysis, analyseFor]
       checkTypes = chainHandlers [resolveNames, typeCheck]
   runStateT (traverseAST PostOrder checkVarStatus ast) initialCtx

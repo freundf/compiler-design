@@ -59,9 +59,15 @@ foldBinOp node lVal rVal =
     BitAnd -> makeConst node $ IntVal (left .&. right)
     BitOr -> makeConst node $ IntVal (left .|. right)
     BitXor -> makeConst node $ IntVal (left `xor` right)
-    Shl -> makeConst node $ IntVal (shiftL left (fromIntegral right))
-    Shr -> makeConst node $ IntVal (shiftR left (fromIntegral right))
+    Shl -> makeConst node $ IntVal (shiftLx86 left (fromIntegral right))
+    Shr -> makeConst node $ IntVal (shiftRx86 left (fromIntegral right))
     
     
 makeConst :: Node -> Value -> Node
 makeConst node val = node { nType = ConstNode val }
+
+shiftLx86 :: Int32 -> Int -> Int32
+shiftLx86 val amt = shiftL val (amt .&. 0x1F)
+
+shiftRx86 :: Int32 -> Int -> Int32
+shiftRx86 val amt = shiftR val (amt .&. 0x1F)
