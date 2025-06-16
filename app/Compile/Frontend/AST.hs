@@ -127,6 +127,7 @@ instance Show UnOp where
 instance Show Type where
   show TInt = "int"
   show TBool = "bool"
+  show TAny = "any"
   
 showAsgnOp :: AsgnOp -> String
 showAsgnOp (Just op) = " " ++ show op ++ "= "

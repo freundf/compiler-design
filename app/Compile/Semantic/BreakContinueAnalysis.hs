@@ -7,7 +7,7 @@ import Compile.Semantic.Util
 import Compile.Frontend.AST
 
 import Control.Monad (when)
-import Control.Monad.State
+import Control.Monad.State.Strict
 
 checkBreakContinue :: Handler Sem
 checkBreakContinue = defaultHandler

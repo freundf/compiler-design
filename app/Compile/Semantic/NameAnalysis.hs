@@ -22,7 +22,7 @@ resolveDecl :: Type -> String -> SourcePos -> Semantic ()
 resolveDecl ty name pos = insertVar name (VarInfo ty False) pos
 
 resolveInit :: Type -> String -> Expr -> SourcePos -> Semantic ()
-resolveInit ty name expr pos = insertVar name (VarInfo ty False) pos
+resolveInit ty name expr pos = insertVar name (VarInfo ty True) pos
 
 resolveAsgn :: String -> AsgnOp -> Expr -> SourcePos -> Semantic ()
 resolveAsgn name _ expr pos = void $ lookupVar name pos

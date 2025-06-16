@@ -22,6 +22,7 @@ import Data.List (findIndex)
 import Data.Maybe (fromJust)
 
 import Control.Monad.IO.Class
+import Debug.Trace (traceShow)
 
 type CodeGen a = State CodeGenState a
 
@@ -39,7 +40,7 @@ codeGen :: IRGraph -> X86
 codeGen ir = regAlloc ((X86 defaultDirectives) . (prologue ++) . concatMap flattenBlock $ schedule ir) strategy
   where
     order = schedule ir
-    regs = preAlloc ir
+    regs = let x = preAlloc ir in traceShow x x
     initialState = CodeGenState regs order ir (Map.size regs) 0 IntMap.empty IntMap.empty
     genBlocks = do
       mapM_ genBlock order
@@ -55,7 +56,6 @@ preAlloc graph = Map.fromList $ zip ns (map VirtReg [0..])
   where
     ns = map nid . filter needsRegister . IntMap.elems . nodes $ graph
     needsRegister n = case nType n of
-      ConstNode {} -> True
       BinOpNode {} -> True
       UnOpNode {} -> True
       Phi {} -> True
@@ -105,13 +105,15 @@ genTerminator bb = do
 genNode :: Node -> CodeGen ()
 genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
   ConstNode (IntVal x) -> do
-    dst <- lookupReg thisId
-    emit' $ Mov dst (Imm (show x))
+    --dst <- lookupReg thisId
+    --emit' $ Mov dst (Imm (show x))
+    assignReg thisId (Imm (show x))
     
   ConstNode (BoolVal b) -> do
-    dst <- lookupReg thisId
+    --dst <- lookupReg thisId
     let imm = if b then Imm "1" else Imm "0"
-    emit' $ Mov dst imm
+    --emit' $ Mov dst imm
+    assignReg thisId imm
     
   BinOpNode { binOp = op, left = l, right = r } -> do
     lhs <- lookupReg l
@@ -124,20 +126,24 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
       IR.Div -> do
         emit' $ Mov rax32 lhs
         emit' $ Cdq
-        emit' $ Idiv rhs
+        case rhs of
+          Imm {} -> emit' (Mov transferReg rhs) >> emit' (Idiv transferReg)
+          _ -> emit' $ Idiv rhs
         emit' $ Mov dst rax32
       IR.Mod -> do
         emit' $ Mov rax32 lhs
         emit' $ Cdq
-        emit' $ Idiv rhs
+        case rhs of
+          Imm {} -> emit' (Mov transferReg rhs) >> emit' (Idiv transferReg)
+          _ -> emit' $ Idiv rhs
         emit' $ Mov dst rdx32
         
-      IR.Lt -> emitComp bid Setl lhs rhs dst
-      IR.Leq -> emitComp bid Setle lhs rhs dst
-      IR.Gt -> emitComp bid Setg lhs rhs dst
-      IR.Geq -> emitComp bid Setge lhs rhs dst
-      IR.Eq -> emitComp bid Sete lhs rhs dst
-      IR.Neq -> emitComp bid Setne lhs rhs dst
+      IR.Lt -> emitComp thisId bid Setl lhs rhs dst
+      IR.Leq -> emitComp thisId bid Setle lhs rhs dst
+      IR.Gt -> emitComp thisId bid Setg lhs rhs dst
+      IR.Geq -> emitComp thisId bid Setge lhs rhs dst
+      IR.Eq -> emitComp thisId bid Sete lhs rhs dst
+      IR.Neq -> emitComp thisId bid Setne lhs rhs dst
       
       IR.Shl -> do
         emit' $ Mov dst lhs
@@ -200,7 +206,10 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
         ir <- gets irGraph
         r <- lookupReg thisId
         forM_ ps $ \p -> do
-          src <- lookupReg p
+          src <- case nType (getNode ir p) of
+                      ConstNode { value = IntVal i } -> pure (Imm (show i))
+                      ConstNode { value = BoolVal b } -> if b then pure (Imm "1") else pure (Imm "0")
+                      _ -> lookupReg p
           let predBlk = block (getNode ir p)
           modify $ \s -> s { phiMoves = IntMap.insertWith (++) predBlk [Mov r src] (phiMoves s) }
   
@@ -226,9 +235,11 @@ emitPhiMove r n = do
   e <- lookupReg n
   emit blk $ Mov r e
   
-emitComp :: BlockId -> (Opnd -> Instr) -> Opnd -> Opnd -> Opnd -> CodeGen ()
-emitComp bid setcc lhs rhs dst = do
-  emit' $ Cmp lhs rhs
+emitComp :: NodeId -> BlockId -> (Opnd -> Instr) -> Opnd -> Opnd -> Opnd -> CodeGen ()
+emitComp thisId bid setcc lhs rhs dst = do
+  r <- lookupReg thisId
+  emit' $ Mov r lhs
+  emit' $ Cmp r rhs
   emit' $ setcc rcx8
   emit' $ Movzx rcx32 rcx8
   emit' $ Mov dst rcx32

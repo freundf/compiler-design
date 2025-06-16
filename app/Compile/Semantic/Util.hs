@@ -4,6 +4,8 @@ module Compile.Semantic.Util
   , Sem
   , VarInfo(..)
   , Context(..)
+  , Scope(..)
+  , ScopeType(..)
   , popTypes
   , pushType
   , insertVar
@@ -17,9 +19,9 @@ module Compile.Semantic.Util
 import Compile.Frontend.AST (Type, posPretty)
 import Error (L1ExceptT, semanticFail)
 
-import Control.Monad.State
-import Data.Map (Map)
-import qualified Data.Map as Map
+import Control.Monad.State.Strict
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 
 import Text.Megaparsec (SourcePos)
 
@@ -34,14 +36,22 @@ type Semantic a = StateT Context L1ExceptT a
 data VarInfo = VarInfo
   { vType :: Type
   , vInit :: Bool
-  }
+  } deriving (Eq, Show)
   
 data Context = Context
-  { scopes :: [Map String VarInfo]
+  { scopes :: [Scope]
   , loopDepth :: Int
   , returnType :: Type
   , recordedTypes :: [Type]
-  }
+  } deriving (Eq, Show)
+
+data Scope = Scope
+  { vars :: Map String VarInfo
+  , sType :: ScopeType
+  } deriving (Eq, Show)
+
+data ScopeType = Transparent | Opaque
+  deriving (Eq, Show)
 
 popTypes :: Int -> Semantic [Type]
 popTypes x = do
@@ -56,9 +66,9 @@ lookupVar :: String -> SourcePos -> Semantic VarInfo
 lookupVar name pos = do
   ctx <- get
   let findInScopes [] = semanticFail' ("Use of undeclared '" ++ name ++ "' at " ++ posPretty pos)
-      findInScopes (m:ms) = case Map.lookup name m of
+      findInScopes ((Scope cur ty):ss) = case Map.lookup name cur of
                               Just v -> pure v
-                              Nothing -> findInScopes ms
+                              Nothing -> findInScopes ss
   findInScopes (scopes ctx)
       
 insertVar :: String -> VarInfo -> SourcePos -> Semantic ()
@@ -66,37 +76,43 @@ insertVar name info pos = do
   ctx <- get
   case scopes ctx of
     [] -> semanticFail' $ "Internal error: no scope to insert variable at " ++ posPretty pos
-    (cur:rest) ->
+    ((Scope cur ty) : rest) ->
       if Map.member name cur
         then semanticFail' $ "Redeclaration of '" ++ name ++ "' at " ++ posPretty pos
-        else put ctx { scopes = Map.insert name info cur : rest }
+        else put ctx { scopes = (Scope (Map.insert name info cur) ty) : rest }
 
 initializeAll :: Semantic ()
 initializeAll = do
   scope <- gets (head . scopes)
-  let newScope = Map.map (\(VarInfo ty _) -> VarInfo ty True) scope
+  let newScope = scope { vars = Map.map (\(VarInfo ty _) -> VarInfo ty True) (vars scope) }
   modify $ \s -> s { scopes = newScope : (tail (scopes s)) }
 
 updateVar :: String -> VarInfo -> Semantic ()
 updateVar name info = do
   scps <- gets scopes
   let update [] = []
-      update (m:ms) = if Map.member name m
-                    then Map.insert name info m : ms
-                    else m : update ms
+      update (s:ss)
+        | sType s == Opaque = if Map.member name (vars s)
+                                then (Scope (Map.insert name info (vars s)) Opaque) : ss
+                                else s : ss
+        | otherwise         = if Map.member name (vars s)
+                                then (Scope (Map.insert name info (vars s)) Transparent) : update ss
+                                else s : update ss
   modify $ \s -> s { scopes = update scps}
 
 inLoop :: Semantic a -> Semantic a
-inLoop m = do
+inLoop m = inScope Opaque $ do
   modify $ \s -> s { loopDepth = loopDepth s + 1}
   res <- m
   modify $ \s -> s { loopDepth = loopDepth s - 1}
   return res
 
-inScope :: Semantic a -> Semantic a
-inScope m = do
+inScope :: ScopeType -> Semantic a -> Semantic a
+inScope ty m = do
   ss <- gets scopes
-  let newScope = if null ss then Map.empty else head ss
+  let newScope = if null ss
+                  then Scope Map.empty ty
+                  else Scope (vars (head ss)) ty
   modify $ \s -> s { scopes = newScope : scopes s}
   res <- m
   modify $ \s -> s { scopes = tail (scopes s) }

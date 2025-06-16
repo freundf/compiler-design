@@ -1,5 +1,5 @@
 module Compile.IR.RegAlloc
-  ( regAlloc, naiveStrategy
+  ( regAlloc, naiveStrategy, transferReg
   ) where
 
 import           Compile.Backend.X86.X86
@@ -97,9 +97,9 @@ processMov o1 o2 = do
     (Mem _ _, Mem _ _) -> do
       emit $ Mov transferReg r2
       emit $ Mov r1 transferReg
-    (Mem _ _, Imm _) -> do
-      emit $ Mov transferReg r2
-      emit $ Mov r1 transferReg
+    --(Mem _ _, Imm _) -> do
+     -- emit $ Mov transferReg r2
+      --emit $ Mov r1 transferReg
     _ -> emit $ Mov r1 r2
       
 processIdiv :: Opnd -> Allocator ()

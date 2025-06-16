@@ -6,18 +6,23 @@ import           Compile.Frontend.AST (AST)
 import qualified Compile.Frontend.AST as AST
 import           Compile.IR.IRGraph
 import           Compile.IR.GraphConstructor
+import           Compile.IR.Optimize.CleanupOptimizer
 
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Control.Monad (when)
 import Numeric (readHex, readDec)
 import Data.Char (isDigit)
 import Data.List (isPrefixOf)
+import Data.Int (Int32)
 
+import Debug.Trace (traceShow)
+import Debug.Trace (traceM)
 
 
 irTranslate :: AST -> IRGraph
-irTranslate function = graph $ execState (translateFunction function) initialState
+irTranslate function = cleanup $ graph finalState
   where
+    finalState = execState (translateFunction function) initialState
     initialState = emptyState
     
 translateFunction :: AST -> GraphConstructor ()
@@ -96,7 +101,7 @@ translateStmt stmt = case stmt of
     sealBlock blk
 
     -- Then Branch
-    thenBlk <- nid <$> newBlock [trueProj]
+    thenBlk <- nid <$> newBlock [trueProj] "then-block"
     setCurrentBlock thenBlk
     sealBlock thenBlk
     translateStmt thenStmt
@@ -105,7 +110,7 @@ translateStmt stmt = case stmt of
     thenJump <- nid <$> newJump
 
     -- Else Branch
-    elseBlk <- nid <$> newBlock [falseProj]
+    elseBlk <- nid <$> newBlock [falseProj] "else-block"
     setCurrentBlock elseBlk
     sealBlock elseBlk
     case maybeElse of
@@ -116,7 +121,7 @@ translateStmt stmt = case stmt of
     elseJump <- nid <$> newJump
 
     -- Merge
-    mergeBlk <- nid <$> newBlock [thenJump, elseJump]
+    mergeBlk <- nid <$> newBlock [thenJump, elseJump] "after-if-block"
     setCurrentBlock mergeBlk
     sealBlock mergeBlk
 
@@ -125,7 +130,7 @@ translateStmt stmt = case stmt of
     sealBlock blk
     endJump <- nid <$> newJump
     
-    whileBlk <- nid <$> newBlock [endJump]
+    whileBlk <- nid <$> newBlock [endJump] "while-block"
     setCurrentBlock whileBlk
     addContinueTarget whileBlk
     cNode <- translateExpr cond
@@ -133,10 +138,9 @@ translateStmt stmt = case stmt of
     trueProj <- nid <$> newProj ifNode CondTrue
     falseProj <- nid <$> newProj ifNode CondFalse
     
-    mergeBlk <- nid <$> newBlock [falseProj]
+    mergeBlk <- nid <$> newBlock [falseProj] "while-end-block"
     addBreakTarget mergeBlk
-    
-    bodyBlk <- nid <$> newBlock [trueProj]
+    bodyBlk <- nid <$> newBlock [trueProj] "while-body-block"
     sealBlock bodyBlk
     setCurrentBlock bodyBlk
     translateStmt body
@@ -151,6 +155,7 @@ translateStmt stmt = case stmt of
     sealBlock mergeBlk
     setCurrentBlock mergeBlk
     
+    
   
   AST.For maybeInit cond maybeStep body _ -> do
     case maybeInit of
@@ -161,11 +166,11 @@ translateStmt stmt = case stmt of
     sealBlock blk
     initJump <- nid <$> newJump
     
-    forBlk <- nid <$> newBlock [initJump]
-    mergeBlk <- nid <$> newBlock []
+    forBlk <- nid <$> newBlock [initJump] "for-block"
+    mergeBlk <- nid <$> newBlock [] "for-end-block"
     addBreakTarget mergeBlk
-    bodyBlk <- nid <$> newBlock []
-    stepBlk <- nid <$> newBlock []
+    bodyBlk <- nid <$> newBlock [] "for-body-block"
+    stepBlk <- nid <$> newBlock [] "for-step-block"
     addContinueTarget stepBlk
     
     setCurrentBlock forBlk
@@ -190,6 +195,8 @@ translateStmt stmt = case stmt of
     
     sealBlock forBlk
     sealBlock stepBlk
+    state <- get
+    traceM (unlines [show state])
     sealBlock bodyBlk
     sealBlock mergeBlk
     removeBreakTarget
@@ -205,7 +212,7 @@ translateStmt stmt = case stmt of
     addPredecessor' target break
     blk <- gets currentBlock
     sealBlock blk
-    afterBreak <- nid <$> newBlock []
+    afterBreak <- nid <$> newBlock [] "after-break-block"
     setCurrentBlock afterBreak
   
   AST.Continue _ -> do
@@ -217,7 +224,7 @@ translateStmt stmt = case stmt of
     addPredecessor' target continue
     blk <- gets currentBlock
     sealBlock blk
-    afterContinue <- nid <$> newBlock []
+    afterContinue <- nid <$> newBlock [] "after-continue-block"
     setCurrentBlock afterContinue
   
   
@@ -252,9 +259,9 @@ translateExpr expr = case expr of
         blk <- gets currentBlock
         lhs <- translateExpr e1
         rhs <- translateExpr e2
-        se <- readCurrentSideEffect
         if hasSideEffect bop
           then do
+            se <- readCurrentSideEffect
             node <- nid <$> newBinOp bop lhs rhs (Just se)
             projResultSE node
           else do
@@ -269,8 +276,8 @@ translateExpr expr = case expr of
     falseProj <- nid <$> newProj ifNode CondFalse
     sealBlock blk
     
-    thenBlk <- nid <$> newBlock [trueProj]
-    elseBlk <- nid <$> newBlock [falseProj]
+    thenBlk <- nid <$> newBlock [trueProj] "ternary-true-block"
+    elseBlk <- nid <$> newBlock [falseProj] "ternary-false-block"
     sealBlock thenBlk
     sealBlock elseBlk
     
@@ -282,7 +289,7 @@ translateExpr expr = case expr of
     eExpr <- translateExpr elseExpr
     eJump <- nid <$> newJump
     
-    mergeBlk <- nid <$> newBlock [tJump, eJump]
+    mergeBlk <- nid <$> newBlock [tJump, eJump] "ternary-end-block"
     sealBlock mergeBlk
     setCurrentBlock mergeBlk
     nid <$> newPhi mergeBlk [tExpr, eExpr] False
@@ -308,14 +315,12 @@ translateBinOp op = case op of
   AST.BitXor -> BitXor
   AST.Shl -> Shl
   AST.Shr -> Shr
-  _ -> error ("Unknown binary operator: " ++ show op)
   
 translateUnOp :: AST.UnOp -> UnOp
 translateUnOp op = case op of
   AST.Neg -> Neg
   AST.Not -> Not
   AST.BitNot -> BitNot
-  _ -> error ("Unknown unary operator: " ++ show op)
   
 translateShortCircuit :: BinOp -> AST.Expr -> AST.Expr -> GraphConstructor NodeId
 translateShortCircuit op e1 e2 = do
@@ -332,22 +337,30 @@ translateShortCircuit op e1 e2 = do
                   Or -> (falseProj, trueProj)
                   _ -> error ("invalid short circuting for operator " ++ show op)
     
-  rhsBlk <- nid <$> newBlock [fst branches]
+  rhsBlk <- nid <$> newBlock [fst branches] "short-circuit-right-block"
   sealBlock rhsBlk
   setCurrentBlock rhsBlk
   rhs <- translateExpr e2
   rhsJump <- nid <$> newJump
   
-  mergeBlk <- nid <$> newBlock [snd branches, rhsJump]
+  mergeBlk <- nid <$> newBlock [snd branches, rhsJump] "short-circuit-end-block"
   sealBlock mergeBlk
   setCurrentBlock mergeBlk
-  nid <$> newPhi mergeBlk [lhs, rhs] False
+  phi <- nid <$> newPhi mergeBlk [lhs, rhs] False
+  tryRemoveTrivialPhi phi
   
 projResultSE :: NodeId -> GraphConstructor NodeId
 projResultSE n = do
-  projSE <- nid <$> newProj n SideEffect
-  writeCurrentSideEffect projSE
-  nid <$> newProj n Result
+  let genProj = do
+        projSE <- nid <$> newProj n SideEffect
+        writeCurrentSideEffect projSE
+        nid <$> newProj n Result
+    
+  ir <- gets graph
+  case nType (getNode ir n) of
+    BinOpNode { binOp = Mod } -> genProj
+    BinOpNode { binOp = Div } -> genProj
+    _ -> pure n
   
 hasSideEffect :: BinOp -> Bool
 hasSideEffect op = case op of
@@ -356,11 +369,11 @@ hasSideEffect op = case op of
   _ -> False
 
 
-parseIntLiteral :: String -> Int
+parseIntLiteral :: String -> Int32
 parseIntLiteral s
-  | "0x" `isPrefixOf` s = readBase readHex (drop 2 s)
-  | "0X" `isPrefixOf` s = readBase readHex (drop 2 s)
-  | otherwise           = readBase readDec s
+  | "0x" `isPrefixOf` s = fromIntegral $ readBase readHex (drop 2 s)
+  | "0X" `isPrefixOf` s = fromIntegral $ readBase readHex (drop 2 s)
+  | otherwise           = fromIntegral $ readBase readDec s
   
 readBase :: ReadS Int -> String -> Int
 readBase parser str = case parser str of

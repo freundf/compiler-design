@@ -21,6 +21,7 @@ data Instr
   | Or     Opnd Opnd      -- or   src, dst    (bitwise OR)
   | Xor    Opnd Opnd      -- xor  src, dst    (bitwise XOR)
   | Not    Opnd
+  
   -- Shift
   | Sall    Opnd Opnd
   | Sarl    Opnd Opnd
@@ -66,28 +67,29 @@ data Opnd
 
 instance Show Instr where
   -- Move
-  show (Mov o1 o2)  = "  mov " ++ show o1 ++ ", " ++ show o2
-  show (Movzx o1 o2) = "  movzx " ++ show o1 ++ ", " ++ show o2
+  show (Mov o1 o2)  = "  mov " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
+  show (Movzx o1 o2) = "  movzx " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
   
   -- Arithmetic
-  show (Add o1 o2)  = "  add " ++ show o1 ++ ", " ++ show o2
-  show (Sub o1 o2)  = "  sub " ++ show o1 ++ ", " ++ show o2
-  show (Imul o1 o2) = "  imul " ++ show o1 ++ ", " ++ show o2
+  show (Add o1 o2)  = "  add " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
+  show (Sub o1 o2)  = "  sub " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
+  show (Imul o1 o2) = "  imul " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
   show (Idiv o)     = "  idiv " ++ show o
   show (Neg o)      = "  neg " ++ show o
   show Cdq          = "  cdq"
   
   -- Logic
-  show (And o1 o2)    = "  and " ++ show o1 ++ ", " ++ show o2
-  show (Or  o1 o2)    = "  or "  ++ show o1 ++ ", " ++ show o2
-  show (Xor o1 o2)    = "  xor " ++ show o1 ++ ", " ++ show o2
-  
+  show (And o1 o2)    = "  and " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
+  show (Or  o1 o2)    = "  or "  ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
+  show (Xor o1 o2)    = "  xor " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
+  show (Not o)        = "  not " ++ showSizePrefixU o ++ show o
+ 
   -- Shift
   show (Sall amt dst)  = "  sal " ++ show amt ++ ", " ++ show dst
   show (Sarl amt dst)  = "  sar " ++ show amt ++ ", " ++ show dst
   
   -- Setcc / Comparison
-  show (Cmp o1 o2)    = "  cmp "  ++ show o1 ++ ", " ++ show o2
+  show (Cmp o1 o2)    = "  cmp "  ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
   show (Setl o)       = "  setl " ++ show o
   show (Setle o)      = "  setle " ++ show o
   show (Setg o)       = "  setg " ++ show o
@@ -115,6 +117,28 @@ instance Show Instr where
   show (Label s)      = s ++ ":"
   show Nop            = ""
 
+
+showBinInstr :: String -> Opnd -> Opnd -> String
+showBinInstr name o1 o2 = name ++ (showSizePrefix o1 o2) ++ show o1 ++ ", " ++ show o2
+
+showSizePrefix :: Opnd -> Opnd -> String
+showSizePrefix o1 o2 = case o1 of
+  Mem {} -> case o2 of
+    Imm {} -> sizePrefix Size32
+    Mem {} -> sizePrefix Size32
+    _ -> ""
+  _ -> ""
+
+showSizePrefixU :: Opnd -> String
+showSizePrefixU o = case o of
+  Mem {} -> sizePrefix Size32
+  _ -> ""
+
+sizePrefix :: RegSize -> String
+sizePrefix Size8 = "byte ptr "
+sizePrefix Size16 = "word ptr "
+sizePrefix Size32 = "dword ptr "
+sizePrefix Size64 = "qword ptr "
 
 instance Show Opnd where
   show (VirtReg i) = "v" ++ show i

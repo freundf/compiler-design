@@ -7,7 +7,7 @@ import Compile.Semantic.Util
 import Compile.Semantic.Traverse
 
 import Control.Monad (unless)
-import Control.Monad.State
+import Control.Monad.State.Strict
 
 
 typeCheck :: Handler Sem
@@ -37,11 +37,18 @@ checkInit ty _ _ pos = do
     semanticFail' $ "Initialization type mismatch at " ++ posPretty pos ++ ": declared " ++ show ty ++ ", got " ++ show t
   
 checkAsgn :: String -> AsgnOp -> Expr -> SourcePos -> Semantic ()
-checkAsgn name _ _ pos = do
+checkAsgn name op _ pos = do
   VarInfo ty _ <- lookupVar name pos
   [t] <- popTypes 1
-  unless (ty == t) $
-    semanticFail' $ "Assignment type mismatch to '" ++ name ++ "' at " ++ posPretty pos ++ ": declared " ++ show ty ++ ", got " ++ show t
+  case op of
+    Just bop -> do
+      let (tIn, tOut) = binOpType bop
+      unless ((ty, t) `elem` tIn) $
+        semanticFail' $ "Type mismatch for assignment operator '" ++ show bop ++ "' at " ++ posPretty pos ++ ": expected " ++ show tIn ++ ", got (" ++ show ty ++ ", " ++ show t ++ ")"
+      unless (ty == tOut) $
+        semanticFail' $ "Assignment type mismatch to '" ++ name ++ "' at " ++ posPretty pos ++ ": declared " ++ show ty ++ ", got " ++ show tOut
+    Nothing -> unless (ty == t) $
+      semanticFail' $ "Assignment type mismatch to '" ++ name ++ "' at " ++ posPretty pos ++ ": declared " ++ show ty ++ ", got " ++ show t
 
 checkRet :: Expr -> SourcePos -> Semantic ()
 checkRet _ pos = do

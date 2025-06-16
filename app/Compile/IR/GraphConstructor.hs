@@ -1,17 +1,19 @@
 module Compile.IR.GraphConstructor where
 
 import           Compile.IR.IRGraph
+import           Compile.IR.Optimize.Optimizer (optimizeNode)
 
-import           Control.Monad.State
-import           Control.Monad (forM_, void)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.IntMap (IntMap)
-import qualified Data.IntMap as IntMap
+import           Control.Monad.State.Strict
+import           Control.Monad (forM_, void, unless)
+import           Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
+import           Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap
 import           Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import           Control.Arrow ((>>>))
 import           Data.Maybe (fromJust)
+
 
 
 data GraphState = GraphState
@@ -26,6 +28,16 @@ data GraphState = GraphState
   , breakTarget :: [NodeId]
   , continueTarget :: [NodeId]
   }
+instance Show GraphState where
+  show g = unlines $
+    [ "irGraph: " ++ show (graph g)
+    , "currentDef: " ++ show (currentDef g)
+    , "incompletePhis: " ++ show (incompletePhis g)
+    , "currentSideEffect: " ++ show (currentSideEffect g)
+    , "incompleteSEPhis: " ++ show (incompleteSEPhis g)
+    , "sealedBlocks: " ++ show (sealedBlocks g)
+    , "currentBlock: " ++ show (currentBlock g)
+    , "nextNodeId: " ++ show (nextNodeId g)]
 
 emptyState :: GraphState
 emptyState = GraphState
@@ -66,7 +78,8 @@ newNode t = do
 newNode_ :: NodeId -> NodeType -> GraphConstructor Node
 newNode_ blk t = do
   n <- freshId
-  let node = (Node n blk t)
+  ir <- gets graph
+  let node = optimizeNode ir (Node n blk t)
   registerNode node
   return node
 
@@ -86,7 +99,9 @@ newReturn :: NodeId -> Maybe NodeId -> GraphConstructor Node
 newReturn e se = newNode (Return e se)
 
 newConst :: Value -> GraphConstructor Node
-newConst i = newNode (ConstNode i)
+newConst i = do
+  --blk <- gets (startBlock . graph)
+  newNode (ConstNode i)
   
 newProj :: NodeId -> ProjInfo -> GraphConstructor Node
 newProj n info = newNode (Proj n info)
@@ -94,10 +109,10 @@ newProj n info = newNode (Proj n info)
 newPhi :: NodeId -> [NodeId] -> Bool -> GraphConstructor Node
 newPhi blk ps se = newNode_ blk (Phi ps se)
 
-newBlock :: [NodeId] -> GraphConstructor Node
-newBlock ps = do
+newBlock :: [NodeId] -> String -> GraphConstructor Node
+newBlock ps name = do
   n <- freshId
-  let node = Node n n (Block ps)
+  let node = Node n n (Block ps name)
   registerNode node
   return node
   
@@ -109,6 +124,9 @@ newIf cond = newNode (Cond cond)
 
 newJump :: GraphConstructor Node
 newJump = newNode Jump
+
+newNopNode :: NodeId -> GraphConstructor Node
+newNopNode blk = newNode_ blk NopNode
 
 writeVar :: Name -> NodeId -> NodeId -> GraphConstructor ()
 writeVar name blk val = modify $ \s -> s {
@@ -151,14 +169,18 @@ readVarRecursive name blk = do
                 phiId <- nid <$> newPhi blk [] False
                 writeVar name blk phiId
                 addPhiOperands name phiId
+  
   writeVar name blk val
   return val
   
 
 node :: NodeId -> GraphConstructor Node
 node n = do
-  ns <- gets (nodes . graph)
-  return (ns IntMap.! n)
+  ir <- gets graph
+  let ns = nodes ir
+  case IntMap.lookup n ns of
+    Just x -> pure x
+    Nothing -> error $ "Couldn't find node '" ++ show n ++ "' in irGraph: " ++ show ir
   
 appendPhiOperand :: NodeId -> NodeId -> GraphConstructor ()
 appendPhiOperand phiId n = do
@@ -170,27 +192,61 @@ appendPhiOperand phiId n = do
 
 addPhiOperands :: Name -> NodeId -> GraphConstructor NodeId
 addPhiOperands name phiId = do
+  ir <- gets graph
   blk <- block <$> node phiId
   preds <- predecessors <$> node blk
   forM_ preds $ \p -> do
     pBlk <- block <$> node p
     v <- readVar name pBlk
-    appendPhiOperand phiId v
+    n <- node v
+    case nType n of
+      NopNode {} -> pure ()
+      _ -> appendPhiOperand phiId v
   tryRemoveTrivialPhi phiId
   
 addSEPhiOperands :: NodeId -> GraphConstructor NodeId
 addSEPhiOperands phiId = do
+  ir <- gets graph
   blk <- block <$> node phiId
   preds <- predecessors <$> (node blk)
   forM_ preds $ \p -> do
     pBlk <- block <$> node p
     v <- readSideEffect pBlk
-    appendPhiOperand phiId v
+    n <- node v
+    case nType n of
+      NopNode {} -> pure ()
+      _ -> appendPhiOperand phiId v
   tryRemoveTrivialPhi phiId
   
   
 tryRemoveTrivialPhi :: NodeId -> GraphConstructor NodeId
-tryRemoveTrivialPhi n = pure n
+tryRemoveTrivialPhi n = do
+  pure n
+  {-
+  ir <- gets graph
+  sBlocks <- gets sealedBlocks
+  let phi = getNode ir n
+      preds = IntSet.toList $ IntSet.delete n (IntSet.fromList (predecessors phi))
+  case preds of
+    [] -> nid <$> newNopNode (block phi)
+    [t] -> do
+      let succs = IntSet.toList $ IntMap.findWithDefault IntSet.empty n (successors ir)
+      forM_
+        succs
+        (\s -> do
+          let ps = predecessors (getNode ir s)
+          forM_ (filter ((== n) . snd) (zip [0..] ps)) (\(i, _) -> do
+            modify $ \st -> st { graph = setPredecessor (graph st) i s t }
+            case nType (getNode ir s) of
+              Phi {} -> if block (getNode ir s) `IntSet.member` sBlocks
+                          then tryRemoveTrivialPhi s
+                          else pure t
+              _ -> pure t
+            )
+        )
+      return t
+    _ -> return n
+   -}
 
 setCurrentBlock :: NodeId -> GraphConstructor ()
 setCurrentBlock b = modify $ \s -> s { currentBlock = b }
@@ -198,15 +254,24 @@ setCurrentBlock b = modify $ \s -> s { currentBlock = b }
 
 sealBlock :: NodeId -> GraphConstructor ()
 sealBlock blk = do
-  -- finish all incomplete Phis
-  mip <- gets (IntMap.findWithDefault Map.empty blk . incompletePhis)
-  forM_ (Map.toList mip) $ \(name, phiId) -> void (addPhiOperands name phiId)
-  -- side-effect Phis
-  msep <- gets (IntMap.lookup blk . incompleteSEPhis)
-  forM_ msep $ \phiId -> void (addSEPhiOperands phiId)
-  -- mark sealed
-  modify $ \s -> s { sealedBlocks = IntSet.insert blk (sealedBlocks s) }
-
+  state <- get
+  unless (blk `IntSet.member` (sealedBlocks state)) $ do
+      forM_ (Map.toList $ IntMap.findWithDefault Map.empty blk (incompletePhis state)) (\(v, p) -> do
+        n <- addPhiOperands v p
+        let vDefs = (Map.!) (currentDef state) v
+        if IntMap.lookup blk vDefs == Just p
+          then modify $ \s -> s { currentDef = Map.insert v (IntMap.insert n blk vDefs) (currentDef s) }
+          else pure ()
+        )
+      modify $ \s -> s { incompletePhis = IntMap.delete blk (incompletePhis s) }
+      state <- get
+      case IntMap.lookup blk (incompleteSEPhis state) of
+        Just phi -> addSEPhiOperands phi
+        Nothing -> pure 1
+      modify $ \s -> s { incompleteSEPhis = IntMap.delete blk (incompleteSEPhis s) }
+      modify $ \s -> s { sealedBlocks = IntSet.insert blk (sealedBlocks s) }
+      
+  
 writeCurrentSideEffect :: NodeId -> GraphConstructor ()
 writeCurrentSideEffect n = do
   blk <- gets currentBlock

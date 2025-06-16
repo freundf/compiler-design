@@ -14,4 +14,3 @@ if [ $status -ne 0 ]; then
 fi
 
 gcc "$temp_file" -o "$output"
-rm -f "$temp_file"

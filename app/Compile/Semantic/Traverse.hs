@@ -4,7 +4,7 @@ import Compile.Frontend.AST
 import Compile.Semantic.Util
 import Error (L1ExceptT)
 
-import Control.Monad.State
+import Control.Monad.State.Strict
 import Control.Monad (when)
 import Data.List (foldl')
 
@@ -76,7 +76,7 @@ traverseAST order handler ast@(Function blk) = do
 traverseBlock :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Block -> Semantic ()
 traverseBlock order handler blk@(Block stmts pos) = do
   hBlockEnter handler blk pos
-  inScope $ mapM_ (traverseStmt order handler) stmts
+  inScope Transparent $ mapM_ (traverseStmt order handler) stmts
   hBlockExit handler blk pos
 
 traverseStmt :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Stmt -> Semantic ()
@@ -101,20 +101,21 @@ traverseStmt order handler stmt = case stmt of
       inLoop $ traverseStmt' body
     
   For mInit cond mStep body pos -> do
-    withOrder order (hFor handler mInit cond mStep body pos) $ do
-      case mInit of
-        Just initStmt -> traverseStmt' initStmt
-        Nothing -> pure ()
-      traverseExpr' cond
-      case mStep of
-        Just stepStmt -> traverseStmt' stepStmt
-        Nothing -> pure ()
-      inScope $ inLoop $ traverseStmt' body
+    inScope Transparent $ do
+      withOrder order (hFor handler mInit cond mStep body pos) $ do
+        case mInit of
+          Just initStmt -> traverseStmt' initStmt
+          Nothing -> pure ()
+        traverseExpr' cond
+        inLoop $ traverseStmt' body
+        case mStep of
+          Just stepStmt -> traverseStmt' stepStmt
+          Nothing -> pure ()
     
   If cond thenStmt mElse pos -> do
     withOrder order (hIf handler cond thenStmt mElse pos) $ do
       traverseExpr' cond
-      traverseStmt' thenStmt
+      inScope Transparent $ traverseStmt' thenStmt
       case mElse of
         Just elseStmt -> traverseStmt' elseStmt
         Nothing -> pure ()
