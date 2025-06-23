@@ -13,15 +13,17 @@ data SyntaxType = Intel | ATT
 data Directives = Directives
   { syntax :: SyntaxType
   , global :: [String]
+  , extern :: [String]
   }
 
 defaultDirectives :: Directives
-defaultDirectives = Directives { syntax = Intel, global = ["main", "main_"] }
+defaultDirectives = Directives { syntax = Intel, global = ["main", "main_"], extern = ["print", "read", "flush"] }
 
 prologue :: [Instr]
 prologue =
   [ Label "main"
   , Call "_main"
+  , Call "flush"
   , Mov rdi64 rax64
   , Mov rax64 (Imm "0x3C")
   , Syscall
@@ -61,10 +63,11 @@ printX86 x86 = show (directives x86) ++ (unlines . map show $ code x86)
 
 
 instance Show Directives where
-  show d = showSyntax ++ showGlobals ++ ".text \n\n"
+  show d = showSyntax ++ showGlobals ++ showExterns ++ ".text \n\n"
     where
       showSyntax = case syntax d of
         Intel -> ".intel_syntax noprefix \n"
         ATT -> ""
 
       showGlobals = concatMap (\s -> ".global " ++ s ++ "\n") (global d)
+      showExterns = concatMap (\s -> ".extern " ++ s ++ "\n") (extern d)

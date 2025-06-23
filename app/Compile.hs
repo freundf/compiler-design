@@ -12,6 +12,8 @@ import Compile.IR.SSA (irTranslate)
 import Error (L1ExceptT)
 
 import Control.Monad.IO.Class
+import System.Process (callProcess)
+import System.FilePath (replaceExtension)
 
 data Job = Job
   { src :: FilePath
@@ -23,11 +25,16 @@ compile job = do
   ast <- parseAST $ src job
   liftIO $ print ast
   semanticAnalysis ast
-  let ir = irTranslate ast
-  liftIO $ print ""
-  liftIO $ print ir
-  liftIO $ print ""
-  liftIO $ print (schedule ir)
-  let code = codeGen ir
-  liftIO $ writeFile (out job) (printX86 code)
+  let ir = irTranslate (head ast)
+      code = codeGen ir
+  liftIO $ assemble (out job) (printX86 code)
   return ()
+
+
+assemble :: FilePath -> String -> IO ()
+assemble file code = do
+    let asmFile = replaceExtension file "s"
+        objFile = replaceExtension file "o"
+    writeFile asmFile code
+    callProcess "gcc" ["-c", asmFile, "-o", objFile]
+    callProcess "gcc" [objFile, "stdlib/stdlib.o", "-o", file]
