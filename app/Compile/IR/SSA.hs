@@ -2,7 +2,7 @@ module Compile.IR.SSA
   ( irTranslate
   ) where
   
-import           Compile.Frontend.AST (AST)
+import           Compile.Frontend.AST (Function)
 import qualified Compile.Frontend.AST as AST
 import           Compile.IR.IRGraph
 import           Compile.IR.GraphConstructor
@@ -19,14 +19,14 @@ import Debug.Trace (traceShow)
 import Debug.Trace (traceM)
 
 
-irTranslate :: AST -> IRGraph
+irTranslate :: Function -> IRGraph
 irTranslate function = cleanup $ graph finalState
   where
     finalState = execState (translateFunction function) initialState
     initialState = emptyState
     
-translateFunction :: AST -> GraphConstructor ()
-translateFunction (AST.Function body) = do
+translateFunction :: Function -> GraphConstructor ()
+translateFunction (AST.Function _ _ _ body _) = do
   start <- nid <$> newStart
   seProj <- nid <$> newProj start SideEffect
   writeCurrentSideEffect seProj

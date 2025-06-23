@@ -27,7 +27,7 @@ typeCheck = defaultHandler
   , hTernary = checkTernary
   }
 
-recordFunctionReturnType :: AST -> Semantic ()
+recordFunctionReturnType :: Function -> Semantic ()
 recordFunctionReturnType _ = modify $ \s -> s { returnType = TInt }
 
 checkInit :: Type -> String -> Expr -> SourcePos -> Semantic ()

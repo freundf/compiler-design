@@ -1,9 +1,10 @@
 module Compile.Frontend.AST
-  ( AST(..)
+  ( AST
+  , Function(..)
   , Block(..)
   , Stmt(..)
   , Expr(..)
-  , AsgnOp(..)
+  , AsgnOp
   , BinOp(..)
   , UnOp(..)
   , Type(..)
@@ -17,8 +18,10 @@ module Compile.Frontend.AST
 import Data.List (intercalate)
 import Text.Megaparsec
 
-newtype AST = Function Block
-  deriving (Eq, Show)
+type AST = [Function]
+
+data Function = Function Type String [(Type, String)] Block SourcePos
+  deriving (Eq)
 
 data Block = Block [Stmt] SourcePos
   deriving (Eq)
@@ -28,6 +31,7 @@ data Stmt
   = Decl Type String SourcePos
   | Init Type String Expr SourcePos
   | Asgn String AsgnOp Expr SourcePos
+  | Call String [Expr] SourcePos
   | Ret Expr SourcePos
   -- Control Statement
   | While Expr Stmt SourcePos
@@ -48,6 +52,7 @@ data Expr
   | UnExpr UnOp Expr
   | BinExpr BinOp Expr Expr
   | Ternary Expr Expr Expr
+  | CallExpr String [Expr] SourcePos
   deriving (Eq)
   
 -- Nothing means =, Just is for +=, %=, ...
@@ -71,6 +76,9 @@ posPretty :: SourcePos -> String
 posPretty = sourcePosPretty
 
 -- Some very basic pretty printing
+instance Show Function where
+  show (Function retTy name params body _) = show retTy ++ " " ++ name ++ "(" ++ (intercalate "," (map show params)) ++ ")" ++ show body
+
 instance Show Block where
   show (Block stmts _) =
     "Block: {\n" ++ intercalate "\n" (map show stmts) ++ "\n}"
@@ -89,6 +97,7 @@ instance Show Stmt where
   show (Break _) = "Break"
   show (Continue _) = "Continue"
   show (InnerBlock blk _) = show blk
+  show (Call name args _) = name ++ "(" ++ (intercalate ", " (map show args)) ++ ")"
 
 instance Show Expr where
   show (BoolLit True _) = "true"
@@ -98,6 +107,7 @@ instance Show Expr where
   show (UnExpr op e) = "(" ++ show op ++ " " ++ show e ++ ")"
   show (BinExpr op lhs rhs) = "(" ++ show lhs ++ " " ++ show op ++ " " ++ show rhs ++ ")"
   show (Ternary cond t f) = "(" ++ show cond ++ " ? " ++ show t ++ " : " ++ show f ++ ")"
+  show (CallExpr name args _) = name ++ "(" ++ (intercalate ", " (map show args)) ++ ")"
 
 instance Show BinOp where
   show Mul    = "*"

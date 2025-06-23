@@ -3,7 +3,7 @@ module Compile.Frontend.Parser
     parseNumber
   ) where
 
-import           Compile.Frontend.AST (AST(..), Block(..), Stmt(..), Expr(..), BinOp(..), UnOp(..), Type(..))
+import           Compile.Frontend.AST (AST, Function(..), Block(..), Stmt(..), Expr(..), BinOp(..), UnOp(..), Type(..))
 import           Compile.Frontend.Lexer
 import           Error (L1ExceptT, parserFail)
 
@@ -36,13 +36,48 @@ type Parser = Parsec Void String
 astParser :: Parser AST
 astParser = do
   sc
-  -- this parses `int main()` literally, like in the L1 grammar
-  reserved "int"
-  reserved "main"
-  parens $ pure ()
-  mainBlock <- block
+  ast <- many function
   eof
-  return $ Function mainBlock
+  return $ ast
+
+function :: Parser Function
+function = do
+  pos <- getSourcePos
+  retTy <- ty
+  sc
+  name <- identifier
+  params <- paramList
+  body <- block
+  return $ Function retTy name params body pos
+
+paramList :: Parser [(Type, String)]
+paramList = do
+  parens $ do
+    (pure [] <* notFollowedBy param)
+    <|> ((:) <$> param <*> paramListFollow)
+
+paramListFollow :: Parser [(Type, String)]
+paramListFollow = do
+  many (symbol "," *> param)
+
+param :: Parser (Type, String)
+param = do
+  t <- ty
+  sc
+  name <- identifier
+  return (t, name)
+
+argList :: Parser [Expr]
+argList = do
+  parens $ do
+    (pure [] <* notFollowedBy arg)
+    <|> ((:) <$> arg <*> argListFollow)
+
+argListFollow :: Parser [Expr]
+argListFollow = many (symbol "," *> arg)
+
+arg :: Parser Expr
+arg = expr
 
 block :: Parser Block
 block = do
@@ -57,7 +92,7 @@ innerBlock = do
   return $ InnerBlock blk pos
 
 stmt :: Parser Stmt
-stmt = try innerBlock <|> try control <|> simp
+stmt = try innerBlock <|> try control <|> (simp <* semi)
 
 control :: Parser Stmt
 control = try cIf <|> try cWhile <|> try cFor <|> try cContinue <|> try cBreak <|> ret
@@ -75,11 +110,11 @@ cFor = do
   pos <- getSourcePos
   reserved "for"
   (fInit, cond, step) <- parens $ do
-    fInit <- optional simp'
+    fInit <- optional simp
     semi
     cond <- expr
     semi
-    step <- optional simp'
+    step <- optional simp
     return (fInit, cond, step)
   body <- stmt
   return $ For fInit cond step body pos
@@ -101,32 +136,25 @@ cElse = do
 cContinue :: Parser Stmt
 cContinue = do
   pos <- getSourcePos
-  s <- reserved "continue"
+  reserved "continue"
   semi
   return $ Continue pos
 
 cBreak :: Parser Stmt
 cBreak = do
   pos <- getSourcePos
-  s <- reserved "break"
+  reserved "break"
   semi
   return $ Break pos
 
 decl :: Parser Stmt
 decl = try declInit <|> declNoInit
 
-mapType :: String -> Parser Type
-mapType "int" = pure TInt
-mapType "bool" = pure TBool
-mapType t = fail $ "unknown type " ++ t
-
 declNoInit :: Parser Stmt
 declNoInit = do
   pos <- getSourcePos
-  dType <- (string "int" <* notFollowedBy identLetter)
-       <|> (string "bool" <* notFollowedBy identLetter)
+  t <- ty
   sc
-  t <- mapType dType
   name <- identifier
   
   return $ Decl t name pos
@@ -134,25 +162,36 @@ declNoInit = do
 declInit :: Parser Stmt
 declInit = do
   pos <- getSourcePos
-  dType <- (string "int" <* notFollowedBy identLetter)
-       <|> (string "bool" <* notFollowedBy identLetter)
-  sc
-  t <- mapType dType
+  t <- ty
   name <- identifier
   void $ symbol "="
   e <- expr
   return $ Init t name e pos
 
-simp' :: Parser Stmt
-simp' = do
-  s <- try asgn <|> decl
-  return s
+ty :: Parser Type
+ty =  (pure TInt <* (string "int" <* notFollowedBy identLetter))
+  <|> (pure TBool <* (string "bool" <* notFollowedBy identLetter))
 
 simp :: Parser Stmt
 simp = do
-  s <- try asgn <|> decl
-  semi
+  s <- try asgn <|> decl <|> call
   return s
+
+call :: Parser Stmt
+call = do
+  pos <- getSourcePos
+  name <- identifier
+  sc
+  args <- argList
+  return $ Call name args pos
+
+callExpr :: Parser Expr
+callExpr = do
+  pos <- getSourcePos
+  name <- identifier
+  sc
+  args <- argList
+  return $ CallExpr name args pos
 
 asgn :: Parser Stmt
 asgn = do
@@ -189,7 +228,7 @@ ret = do
   return $ Ret e pos
 
 expr' :: Parser Expr
-expr' = parens expr <|> boolLit <|> intExpr <|> identExpr
+expr' = parens expr <|> boolLit <|> intExpr <|> try callExpr <|> identExpr
 
 boolLit :: Parser Expr
 boolLit = do

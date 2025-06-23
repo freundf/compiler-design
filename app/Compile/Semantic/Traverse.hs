@@ -11,8 +11,8 @@ import Data.List (foldl')
 import Text.Megaparsec (SourcePos)
 
 data Handler m = Handler
-  { hFuncEnter :: AST -> m ()
-  , hFuncExit :: AST -> m ()
+  { hFuncEnter :: Function -> m ()
+  , hFuncExit :: Function -> m ()
   
   , hBlockEnter :: Block -> SourcePos -> m ()
   , hBlockExit :: Block -> SourcePos -> m ()
@@ -67,11 +67,11 @@ defaultHandler = Handler
 data TraversalOrder = PreOrder | PostOrder
   deriving (Eq, Show)
 
-traverseAST :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> AST -> Semantic ()
-traverseAST order handler ast@(Function blk) = do
-  hFuncEnter handler ast
+traverseFunction :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Function -> Semantic ()
+traverseFunction order handler f@(Function retTy name params blk pos) = do
+  hFuncEnter handler f
   traverseBlock order handler blk
-  hFuncExit handler ast
+  hFuncExit handler f
 
 traverseBlock :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Block -> Semantic ()
 traverseBlock order handler blk@(Block stmts pos) = do

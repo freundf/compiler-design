@@ -12,7 +12,7 @@ import           Compile.Semantic.NameAnalysis (resolveNames)
 import           Compile.Semantic.BreakContinueAnalysis (checkBreakContinue)
 import           Compile.Semantic.ForAnalysis (analyseFor)
 import           Compile.Semantic.IntegerAnalysis (checkIntegers)
-import           Compile.Semantic.Traverse (traverseAST, chainHandlers, TraversalOrder(..))
+import           Compile.Semantic.Traverse (traverseFunction, chainHandlers, TraversalOrder(..))
 import           Compile.Semantic.Util
 
 import           Control.Monad (unless, when, void)
@@ -25,15 +25,15 @@ import           Text.Megaparsec.Pos (SourcePos)
 
 
 semanticAnalysis :: AST -> L1ExceptT ()
-semanticAnalysis ast = do
+semanticAnalysis (f:fs) = do
   let initialCtx = Context { scopes = [], oldScopes = [], loopDepth = 0, returnType = TAny, recordedTypes = [] }
       checkVarStatus = chainHandlers [resolveNames, varStatusAnalysis, analyseFor]
       checkTypes = chainHandlers [resolveNames, typeCheck]
-  runStateT (traverseAST PostOrder checkVarStatus ast) initialCtx
-  runStateT (traverseAST PostOrder checkTypes ast) initialCtx
-  runStateT (traverseAST PostOrder checkIntegers ast) initialCtx
-  runStateT (traverseAST PostOrder checkBreakContinue ast) initialCtx
-  runStateT (traverseAST PostOrder checkReturns ast) initialCtx
+  runStateT (traverseFunction PostOrder checkVarStatus f) initialCtx
+  runStateT (traverseFunction PostOrder checkTypes f) initialCtx
+  runStateT (traverseFunction PostOrder checkIntegers f) initialCtx
+  runStateT (traverseFunction PostOrder checkBreakContinue f) initialCtx
+  runStateT (traverseFunction PostOrder checkReturns f) initialCtx
   return ()
 
 

@@ -14,8 +14,8 @@ checkReturns = defaultHandler
   { hFuncExit = functionReturns
   }
 
-functionReturns :: AST -> Semantic ()
-functionReturns (Function block) = unless (blockReturns block) $ semanticFail' ("Not all control-flow paths return a value")
+functionReturns :: Function -> Semantic ()
+functionReturns (Function _ _ _ block _) = unless (blockReturns block) $ semanticFail' ("Not all control-flow paths return a value")
 
 blockReturns :: Block -> Bool
 blockReturns (Block stmts _) = stmtsReturn stmts
