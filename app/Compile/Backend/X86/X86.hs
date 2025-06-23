@@ -39,7 +39,7 @@ registers =
   , Reg (Register R14 Size32)
   , Reg (Register R15 Size32)
   ]
-  ++ [Mem (Register RBP Size32) (-8 * i) | i <- [1..]]
+  ++ [Mem (Register RBP Size32) (- (8 * i)) | i <- [1..]]
 
 allocStack :: Int -> [Instr]
 allocStack size

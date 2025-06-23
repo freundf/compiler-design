@@ -7,6 +7,7 @@ import qualified Compile.Frontend.AST as AST
 import           Compile.IR.IRGraph
 import           Compile.IR.GraphConstructor
 import           Compile.IR.Optimize.CleanupOptimizer
+import           Compile.IR.Optimize.DeadBlockPrune
 
 import Control.Monad.State.Strict
 import Control.Monad (when)
@@ -14,9 +15,6 @@ import Numeric (readHex, readDec)
 import Data.Char (isDigit)
 import Data.List (isPrefixOf)
 import Data.Int (Int32)
-
-import Debug.Trace (traceShow)
-import Debug.Trace (traceM)
 
 
 irTranslate :: AST -> IRGraph
@@ -30,15 +28,18 @@ translateFunction (AST.Function body) = do
   start <- nid <$> newStart
   seProj <- nid <$> newProj start SideEffect
   writeCurrentSideEffect seProj
-  
+
   blk <- gets currentBlock
   endBlk <- gets (endBlock . graph)
   setCurrentBlock endBlk
-  newExit
+  exit <- nid <$> newExit
+  addPredecessor' endBlk exit
   setCurrentBlock blk
-  
+
   translateBlock body
-    
+  exitJump <- nid <$> newJump
+  addPredecessor' endBlk exitJump
+
 translateBlock :: AST.Block -> GraphConstructor ()
 translateBlock (AST.Block stmts _)= mapUntilRet translateStmt stmts
   where
@@ -195,8 +196,6 @@ translateStmt stmt = case stmt of
     
     sealBlock forBlk
     sealBlock stepBlk
-    state <- get
-    traceM (unlines [show state])
     sealBlock bodyBlk
     sealBlock mergeBlk
     removeBreakTarget
@@ -264,10 +263,9 @@ translateExpr expr = case expr of
             se <- readCurrentSideEffect
             node <- nid <$> newBinOp bop lhs rhs (Just se)
             projResultSE node
-          else do
-            node <- nid <$> newBinOp bop lhs rhs Nothing
-            pure node
-    
+          else
+            nid <$> newBinOp bop lhs rhs Nothing
+
   AST.Ternary cond thenExpr elseExpr -> do
     blk <- gets currentBlock
     cNode <- translateExpr cond
@@ -346,7 +344,7 @@ translateShortCircuit op e1 e2 = do
   mergeBlk <- nid <$> newBlock [snd branches, rhsJump] "short-circuit-end-block"
   sealBlock mergeBlk
   setCurrentBlock mergeBlk
-  phi <- nid <$> newPhi mergeBlk [lhs, rhs] False
+  phi <- nid <$> newPhi mergeBlk [fst branches, snd branches] False
   tryRemoveTrivialPhi phi
   
 projResultSE :: NodeId -> GraphConstructor NodeId

@@ -9,8 +9,12 @@ import Compile.Semantic.Semantic (semanticAnalysis)
 import Compile.Backend.X86.X86 (printX86)
 import Compile.Backend.Schedule (schedule)
 import Compile.IR.SSA (irTranslate)
+import Compile.IR.RegAlloc
+import Compile.IR.IRGraph
 import Error (L1ExceptT)
 
+
+import qualified Data.IntMap as IntMap
 import Control.Monad.IO.Class
 
 data Job = Job
@@ -24,10 +28,9 @@ compile job = do
   liftIO $ print ast
   semanticAnalysis ast
   let ir = irTranslate ast
-  liftIO $ print ""
   liftIO $ print ir
-  liftIO $ print ""
-  liftIO $ print (schedule ir)
-  let code = codeGen ir
+  let order = schedule ir
+      regMap = naiveStrategy (fst . IntMap.findMax $ nodes ir)
+  let code = codeGen regMap order ir
   liftIO $ writeFile (out job) (printX86 code)
   return ()

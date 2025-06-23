@@ -37,7 +37,7 @@ data VarInfo = VarInfo
   { vType :: Type
   , vInit :: Bool
   } deriving (Eq, Show)
-  
+
 data Context = Context
   { scopes :: [Scope]
   , oldScopes :: [Scope]
@@ -71,7 +71,7 @@ lookupVar name pos = do
                               Just v -> pure v
                               Nothing -> findInScopes ss
   findInScopes (scopes ctx)
-      
+
 insertVar :: String -> VarInfo -> SourcePos -> Semantic ()
 insertVar name info pos = do
   ctx <- get
@@ -80,13 +80,13 @@ insertVar name info pos = do
     ((Scope cur ty) : rest) ->
       if Map.member name cur
         then semanticFail' $ "Redeclaration of '" ++ name ++ "' at " ++ posPretty pos
-        else put ctx { scopes = (Scope (Map.insert name info cur) ty) : rest }
+        else put ctx { scopes = Scope (Map.insert name info cur) ty : rest }
 
 initializeAll :: Semantic ()
 initializeAll = do
   scope <- gets (head . scopes)
   let newScope = scope { vars = Map.map (\(VarInfo ty _) -> VarInfo ty True) (vars scope) }
-  modify $ \s -> s { scopes = newScope : (tail (scopes s)) }
+  modify $ \s -> s { scopes = newScope : tail (scopes s) }
 
 updateVar :: String -> VarInfo -> Semantic ()
 updateVar name info = do
@@ -94,10 +94,10 @@ updateVar name info = do
   let update [] = []
       update (s:ss)
         | sType s == Opaque = if Map.member name (vars s)
-                                then (Scope (Map.insert name info (vars s)) Opaque) : ss
+                                then Scope (Map.insert name info (vars s)) Opaque : ss
                                 else s : ss
         | otherwise         = if Map.member name (vars s)
-                                then (Scope (Map.insert name info (vars s)) Transparent) : update ss
+                                then Scope (Map.insert name info (vars s)) Transparent : update ss
                                 else s : update ss
   modify $ \s -> s { scopes = update scps}
 
@@ -116,5 +116,5 @@ inScope ty m = do
                   else Scope (vars (head ss)) ty
   modify $ \s -> s { scopes = newScope : scopes s}
   res <- m
-  modify $ \s -> s { scopes = tail (scopes s), oldScopes = head (scopes s) : (oldScopes s) }
+  modify $ \s -> s { scopes = tail (scopes s), oldScopes = head (scopes s) : oldScopes s }
   return res

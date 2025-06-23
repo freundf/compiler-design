@@ -7,6 +7,7 @@ import Error (L1ExceptT)
 import Control.Monad.State.Strict
 import Control.Monad (when)
 import Data.List (foldl')
+import Data.Maybe (maybe)
 
 import Text.Megaparsec (SourcePos)
 
@@ -96,30 +97,42 @@ traverseStmt order handler stmt = case stmt of
       traverseExpr' expr
     
   While cond body pos -> do
-    withOrder order (hWhile handler cond body pos) $ do
+   resolveNames :: Handler Sem
+   resolveNames = defaultHandler
+     { hDecl = resolveDecl
+     , hInit = resolveInit
+     , hAsgn = resolveAsgn
+     , hIdent = resolveIdent
+     }
+
+   resolveDecl :: Type -> String -> SourcePos -> Semantic ()
+   resolveDecl ty name pos = insertVar name (VarInfo ty False) pos
+
+   resolveInit :: Type -> String -> Expr -> SourcePos -> Semantic ()
+   resolveInit ty name expr pos = insertVar name (VarInfo ty True) pos
+
+   resolveAsgn :: String -> AsgnOp -> Expr -> SourcePos -> Semantic ()
+   resolveAsgn name _ expr pos = void $ lookupVar name pos
+
+   resolveIdent :: String -> SourcePos -> Semantic ()
+   resolveIdent name pos = void $ lookupVar name pos withOrder order (hWhile handler cond body pos) $ do
       traverseExpr' cond
       inLoop $ traverseStmt' body
     
   For mInit cond mStep body pos -> do
     inScope Transparent $ do
       withOrder order (hFor handler mInit cond mStep body pos) $ do
-        case mInit of
-          Just initStmt -> traverseStmt' initStmt
-          Nothing -> pure ()
+        maybe (pure ()) traverseStmt' mInit
         traverseExpr' cond
         inLoop $ traverseStmt' body
-        case mStep of
-          Just stepStmt -> traverseStmt' stepStmt
-          Nothing -> pure ()
-    
+        maybe (pure ()) traverseStmt' mStep
+
   If cond thenStmt mElse pos -> do
     withOrder order (hIf handler cond thenStmt mElse pos) $ do
       traverseExpr' cond
       inScope Transparent $ traverseStmt' thenStmt
-      case mElse of
-        Just elseStmt -> traverseStmt' elseStmt
-        Nothing -> pure ()
-    
+      inScope Transparent $ maybe (pure ()) traverseStmt' mElse
+
   Break pos -> hBreak handler pos
   
   Continue pos -> hContinue handler pos
@@ -157,9 +170,9 @@ traverseExpr order handler expr = case expr of
     
 withOrder :: Monad m => TraversalOrder -> m () -> m a -> m a
 withOrder order handlerAction body = do
-  when (order == PreOrder) $ handlerAction
+  when (order == PreOrder) handlerAction
   result <- body
-  when (order == PostOrder) $ handlerAction
+  when (order == PostOrder) handlerAction
   return result
   
 combineHandlers :: Monad m => Handler m -> Handler m -> Handler m

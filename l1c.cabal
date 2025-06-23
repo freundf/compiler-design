@@ -56,6 +56,9 @@ executable l1c
                   Compile.Backend.X86.X86,
                   Compile.Backend.X86.Register,
                   Compile.Backend.X86.Instruction,
+                  Compile.Backend.Optimize.PeepholeOptimizer,
+                  Compile.Backend.Optimize.MemOperandSplitter,
+                  Compile.Backend.Optimize.RemoveRedundant,
                   Error
     hs-source-dirs:   app
     default-language: Haskell2010

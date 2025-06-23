@@ -23,8 +23,8 @@ data Instr
   | Not    Opnd
   
   -- Shift
-  | Sall    Opnd Opnd
-  | Sarl    Opnd Opnd
+  | Sal    Opnd Opnd
+  | Sar    Opnd Opnd
   
   -- Setcc / Comparison
   | Cmp    Opnd Opnd      -- cmp  lhs, rhs    (sets flags lhs–rhs)
@@ -50,6 +50,8 @@ data Instr
   -- Stack
   | Push Opnd
   | Pop Opnd
+  | Enter Opnd Opnd
+  | Leave
   
   -- Other
   | Label String
@@ -62,7 +64,12 @@ data Opnd
   | Imm String
   | Mem Register Int
   deriving (Eq, Ord)
-  
+
+
+data Operands
+  = BinaryOperands Opnd Opnd
+  | UnaryOperand Opnd
+  | NoOperand
   
 
 instance Show Instr where
@@ -74,7 +81,7 @@ instance Show Instr where
   show (Add o1 o2)  = "  add " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
   show (Sub o1 o2)  = "  sub " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
   show (Imul o1 o2) = "  imul " ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
-  show (Idiv o)     = "  idiv " ++ show o
+  show (Idiv o)     = "  idiv " ++ showSizePrefixU o ++ show o
   show (Neg o)      = "  neg " ++ show o
   show Cdq          = "  cdq"
   
@@ -85,8 +92,8 @@ instance Show Instr where
   show (Not o)        = "  not " ++ showSizePrefixU o ++ show o
  
   -- Shift
-  show (Sall amt dst)  = "  sal " ++ show amt ++ ", " ++ show dst
-  show (Sarl amt dst)  = "  sar " ++ show amt ++ ", " ++ show dst
+  show (Sal dst amt)  = "  sal " ++ showSizePrefixU dst ++ show dst ++ ", " ++ show amt
+  show (Sar dst amt)  = "  sar " ++ showSizePrefixU dst ++ show dst ++ ", " ++ show amt
   
   -- Setcc / Comparison
   show (Cmp o1 o2)    = "  cmp "  ++ showSizePrefix o1 o2 ++ show o1 ++ ", " ++ show o2
@@ -112,11 +119,15 @@ instance Show Instr where
   -- Stack
   show (Push o)     = "  push " ++ show o
   show (Pop o)     = "  pop " ++ show o
+  show (Enter o1 o2) = "  enter " ++ show o1 ++ ", " ++ show o2
+  show (Leave)      = "  leave"
  
   -- Other
   show (Label s)      = s ++ ":"
   show Nop            = ""
 
+getOperands :: Instr -> Operands
+getOperands i = NoOperand
 
 showBinInstr :: String -> Opnd -> Opnd -> String
 showBinInstr name o1 o2 = name ++ (showSizePrefix o1 o2) ++ show o1 ++ ", " ++ show o2

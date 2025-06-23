@@ -9,6 +9,7 @@ module Compile.IR.IRGraph
   , UnOp(..)
   , Value(..)
   , newGraph
+  , succs
   , predecessors
   , addPredecessor
   , setPredecessor
@@ -26,6 +27,7 @@ import qualified Data.IntMap.Strict as IntMap
 import           Data.IntSet (IntSet)
 import qualified Data.IntSet as IntSet
 import           Data.List (intercalate)
+import           Data.Maybe(maybe)
 import           Data.Int (Int32)
 
 
@@ -110,15 +112,20 @@ newGraph name = IRGraph
   where
     firstBlock = Node 0 0 (Block [] "Start")
     lastBlock = Node 1 1 (Block [] "End")
-  
+
+succs :: IRGraph -> NodeId -> [NodeId]
+succs ir n
+  | n `IntMap.notMember` (nodes ir) = error $ "Node " ++ show n ++ "is not in " ++ show ir
+  | otherwise                       = IntSet.toList $ IntMap.findWithDefault IntSet.empty n (successors ir)
+
 predecessors :: Node -> [NodeId]
 predecessors n =
   case nType n of
     Start -> []
     Block ps _ -> ps
-    Return e _-> [e]
+    Return e se -> e : (maybe [] (:[]) se)
     ConstNode _ -> []
-    BinOpNode _ l r _ -> [l, r]
+    BinOpNode _ l r se -> [l, r] ++ (maybe [] (:[]) se)
     UnOpNode _ e -> [e]
     Proj e _ -> [e]
     Phi ps _ -> ps
