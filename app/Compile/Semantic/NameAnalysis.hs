@@ -8,15 +8,20 @@ import Compile.Semantic.Traverse
 import Compile.Frontend.AST
 
 import Control.Monad (void)
+import Control.Monad.State.Strict (modify)
 
 
 resolveNames :: Handler Sem
 resolveNames = defaultHandler
-  { hDecl = resolveDecl
+  { hFuncEnter = prepareCtx
+  , hDecl = resolveDecl
   , hInit = resolveInit
   , hAsgn = resolveAsgn
   , hIdent = resolveIdent
   }
+
+prepareCtx :: Function -> Semantic ()
+prepareCtx _ = modify $ \s -> s { scopes = [], oldScopes = [], loopDepth = 0, returnType = TAny, recordedTypes = [] }
 
 resolveDecl :: Type -> String -> SourcePos -> Semantic ()
 resolveDecl ty name pos = insertVar name (VarInfo ty False) pos

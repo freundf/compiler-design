@@ -6,6 +6,7 @@ module Compile.Semantic.Util
   , Context(..)
   , Scope(..)
   , ScopeType(..)
+  , builtins
   , popTypes
   , pushType
   , insertVar
@@ -14,9 +15,10 @@ module Compile.Semantic.Util
   , inScope
   , inLoop
   , initializeAll
+  , emptyCtx
   ) where
 
-import Compile.Frontend.AST (Type, posPretty)
+import Compile.Frontend.AST (Function(..), Type(..), posPretty)
 import Error (L1ExceptT, semanticFail)
 
 import Control.Monad.State.Strict
@@ -44,6 +46,7 @@ data Context = Context
   , loopDepth :: Int
   , returnType :: Type
   , recordedTypes :: [Type]
+  , functions :: [Function]
   } deriving (Eq, Show)
 
 data Scope = Scope
@@ -53,6 +56,23 @@ data Scope = Scope
 
 data ScopeType = Transparent | Opaque
   deriving (Eq, Show)
+
+emptyCtx :: [Function] -> Context
+emptyCtx fs = Context
+  { scopes = []
+  , oldScopes = []
+  , loopDepth = 0
+  , returnType = TAny
+  , recordedTypes = []
+  , functions = fs ++ builtins
+  }
+
+builtins :: [Function]
+builtins =
+  [ Function TInt "print" [(TInt, undefined)] undefined undefined
+  , Function TInt "read" [] undefined undefined
+  , Function TInt "flush" [] undefined undefined
+  ]
 
 popTypes :: Int -> Semantic [Type]
 popTypes x = do

@@ -11,7 +11,8 @@ import Data.List (foldl')
 import Text.Megaparsec (SourcePos)
 
 data Handler m = Handler
-  { hFuncEnter :: Function -> m ()
+  { hAST :: AST -> m ()
+  , hFuncEnter :: Function -> m ()
   , hFuncExit :: Function -> m ()
   
   , hBlockEnter :: Block -> SourcePos -> m ()
@@ -27,6 +28,7 @@ data Handler m = Handler
   , hBreak    :: SourcePos -> m ()
   , hContinue :: SourcePos -> m ()
   , hInnerBlock :: Block -> SourcePos -> m ()
+  , hCall :: String -> [Expr] -> SourcePos -> m ()
   
   , hIdent :: String -> SourcePos -> m ()
   , hBoolLit :: Bool -> SourcePos -> m ()
@@ -34,11 +36,13 @@ data Handler m = Handler
   , hUnExpr :: UnOp -> Expr -> m ()
   , hBinExpr :: BinOp -> Expr -> Expr -> m ()
   , hTernary :: Expr -> Expr -> Expr -> m ()
+  , hCallExpr :: String -> [Expr] -> SourcePos -> m ()
   }
   
 defaultHandler :: Monad m => Handler m
 defaultHandler = Handler
-  { hFuncEnter = \_ -> return ()
+  { hAST = \_ -> return ()
+  , hFuncEnter = \_ -> return ()
   , hFuncExit  = \_ -> return ()
 
   , hBlockEnter    = \_ _ -> return ()
@@ -54,6 +58,7 @@ defaultHandler = Handler
   , hBreak         = \_ -> return ()
   , hContinue      = \_ -> return ()
   , hInnerBlock    = \_ _ -> return ()
+  , hCall          = \_ _ _ -> return ()
 
   , hIdent         = \_ _ -> return ()
   , hBoolLit       = \_ _ -> return ()
@@ -61,11 +66,17 @@ defaultHandler = Handler
   , hUnExpr        = \_ _ -> return ()
   , hBinExpr       = \_ _ _ -> return ()
   , hTernary       = \_ _ _ -> return ()
+  , hCallExpr          = \_ _ _ -> return ()
   }
 
   
 data TraversalOrder = PreOrder | PostOrder
   deriving (Eq, Show)
+
+traverseAST :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> AST -> Semantic ()
+traverseAST order handler functions = do
+  withOrder order (hAST handler functions) $
+    mapM_ (traverseFunction order handler) functions
 
 traverseFunction :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Function -> Semantic ()
 traverseFunction order handler f@(Function retTy name params blk pos) = do
@@ -127,6 +138,10 @@ traverseStmt order handler stmt = case stmt of
   InnerBlock blk pos -> do
     withOrder order (hInnerBlock handler blk pos) $
       traverseBlock' blk
+
+  Call func params pos -> do
+    withOrder order (hCall handler func params pos) $
+      mapM_ traverseExpr' params
   
   where
     traverseBlock' = traverseBlock order handler
@@ -134,7 +149,7 @@ traverseStmt order handler stmt = case stmt of
     traverseExpr' = traverseExpr order handler
     
     
-traverseExpr :: TraversalOrder -> Handler (StateT Context L1ExceptT)  -> Expr -> Semantic ()
+traverseExpr :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Expr -> Semantic ()
 traverseExpr order handler expr = case expr of
   BoolLit b pos -> hBoolLit handler b pos
   IntExpr s pos -> hIntExpr handler s pos
@@ -151,7 +166,9 @@ traverseExpr order handler expr = case expr of
       traverseExpr' c
       traverseExpr' e1
       traverseExpr' e2
-  
+  CallExpr func params pos -> do
+    withOrder order (hCallExpr handler func params pos) $ do
+      mapM_ traverseExpr' params
   where
     traverseExpr' = traverseExpr order handler
     
@@ -164,7 +181,8 @@ withOrder order handlerAction body = do
   
 combineHandlers :: Monad m => Handler m -> Handler m -> Handler m
 combineHandlers h1 h2 = Handler
-  { hFuncEnter     = \blk -> hFuncEnter h1 blk >> hFuncEnter h2 blk
+  { hAST           = \ast -> hAST h1 ast >> hAST h2 ast
+  , hFuncEnter     = \blk -> hFuncEnter h1 blk >> hFuncEnter h2 blk
   , hFuncExit      = \blk -> hFuncExit h1 blk >> hFuncExit h2 blk
   , hBlockEnter    = \blk -> hBlockEnter h1 blk >> hBlockEnter h2 blk
   , hBlockExit     = \blk -> hBlockExit h1 blk >> hBlockExit h2 blk
@@ -184,6 +202,8 @@ combineHandlers h1 h2 = Handler
   , hBinExpr       = \op e1 e2 -> hBinExpr h1 op e1 e2 >> hBinExpr h2 op e1 e2
   , hTernary       = \c e1 e2 -> hTernary h1 c e1 e2 >> hTernary h2 c e1 e2
   , hInnerBlock    = \b pos -> hInnerBlock h1 b pos >> hInnerBlock h2 b pos
+  , hCall          = \f ps pos -> hCall h1 f ps pos >> hCall h2 f ps pos
+  , hCallExpr          = \f ps pos -> hCallExpr h1 f ps pos >> hCallExpr h2 f ps pos
   }
 
 

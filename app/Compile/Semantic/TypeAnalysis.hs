@@ -8,6 +8,7 @@ import Compile.Semantic.Traverse
 
 import Control.Monad (unless)
 import Control.Monad.State.Strict
+import Data.List (find)
 
 
 typeCheck :: Handler Sem
@@ -25,10 +26,12 @@ typeCheck = defaultHandler
   , hUnExpr = checkUnExpr
   , hBinExpr = checkBinExpr
   , hTernary = checkTernary
+  , hCall = checkCall
+  , hCallExpr = checkCallExpr
   }
 
 recordFunctionReturnType :: Function -> Semantic ()
-recordFunctionReturnType _ = modify $ \s -> s { returnType = TInt }
+recordFunctionReturnType f = modify $ \s -> s { returnType = retType f }
 
 checkInit :: Type -> String -> Expr -> SourcePos -> Semantic ()
 checkInit ty _ _ pos = do
@@ -110,3 +113,25 @@ checkTernary _ _ _ = do
   unless (t1 == t2) $
     semanticFail' $ "Ternary types must match: " ++ show t1 ++ " vs " ++ show t2
   pushType t1
+
+
+checkCall :: String -> [Expr] -> SourcePos -> Semantic ()
+checkCall f p pos = do
+  funcs <- gets functions
+  let function = find ((f ==) . fName) funcs
+  args <- popTypes (length p)
+  case function of
+    Nothing -> semanticFail' $ "Call to undefined function: " ++ f ++ ", at " ++ show pos
+    Just func -> do
+      unless ((map fst (params func)) == (reverse args)) $ semanticFail' $ "Type mismatch in function arguments for '" ++ show f ++ "', at" ++ show pos
+
+checkCallExpr :: String -> [Expr] -> SourcePos -> Semantic ()
+checkCallExpr f p pos = do
+  funcs <- gets functions
+  let function = find ((f ==) . fName) funcs
+  args <- popTypes (length p)
+  case function of
+    Nothing -> semanticFail' $ "Call to undefined function: " ++ f ++ ", at " ++ show pos
+    Just func -> do
+      unless ((map fst (params func)) == (reverse args)) $ semanticFail' $ "Type mismatch in function arguments for '" ++ show f ++ "', at" ++ show pos
+      pushType (retType func)

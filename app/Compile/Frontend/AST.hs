@@ -20,8 +20,13 @@ import Text.Megaparsec
 
 type AST = [Function]
 
-data Function = Function Type String [(Type, String)] Block SourcePos
-  deriving (Eq)
+data Function = Function
+  { retType :: Type
+  , fName :: String
+  , params :: [(Type, String)]
+  , body :: Block
+  , pos :: SourcePos
+  } deriving (Eq)
 
 data Block = Block [Stmt] SourcePos
   deriving (Eq)

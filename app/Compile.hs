@@ -25,7 +25,7 @@ compile job = do
   ast <- parseAST $ src job
   liftIO $ print ast
   semanticAnalysis ast
-  let ir = irTranslate (head ast)
+  let ir = irTranslate ast
       code = codeGen ir
   liftIO $ assemble (out job) (printX86 code)
   return ()
