@@ -16,6 +16,7 @@ checkTypes :: Handler TypeState
 checkTypes = defaultHandler
   { hAST = recordFunctions
   , hFuncEnter = recordFunctionReturnType
+  , hDecl = checkDecl
   , hInit = checkInit
   , hAsgn = checkAsgn
   , hRet = checkRet

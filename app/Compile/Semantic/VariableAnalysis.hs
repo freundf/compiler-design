@@ -12,8 +12,6 @@ import Control.Monad.State.Strict
 import qualified Data.Set as Set
 import Data.Maybe (isJust)
 
-import Debug.Trace (traceM)
-
 varStatusAnalysis :: Handler VariableState
 varStatusAnalysis = defaultHandler
   { hAsgn = varStatusAsgn
@@ -47,8 +45,6 @@ varStatusIdent name pos = check name pos
 varStatusIfThen :: Stmt -> VariableState ()
 varStatusIfThen _ = do
   scope <- getCurrentScope
-  s <- get
-  traceM (show s)
   modify $ \s -> s { scopeIf = scope : (scopeIf s) }
 
 varStatusIfElse :: Maybe Stmt -> VariableState ()
@@ -65,9 +61,6 @@ varStatusIf _ _ _ _ = do
   elseScope <- gets (head . scopeElse)
   modify $ \s -> s { scopeIf = tail (scopeIf s), scopeElse = tail (scopeElse s) }
   scope <- gets (head . scopes)
-  traceM (show ifScope)
-  traceM (show elseScope)
-  traceM (show scope)
   let updated = scope { definitions = (definitions scope) `Set.union` ((definitions ifScope) `Set.intersection` (definitions elseScope)) }
   modify $ \s -> s { scopes = updated : tail (scopes s) }
 

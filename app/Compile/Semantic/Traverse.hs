@@ -82,6 +82,8 @@ class Monad m => TraverseMonad m where
 data TraversalOrder = PreOrder | PostOrder
   deriving (Eq, Show)
 
+type ScopeFlag = Bool
+
 traverseAST :: TraverseMonad m => TraversalOrder -> Handler m -> AST -> m ()
 traverseAST order handler functions = do
   withOrder order (hAST handler functions) $
@@ -96,11 +98,11 @@ traverseFunction order handler f@(Function retTy name params blk pos) = do
 traverseBlock :: TraverseMonad m => TraversalOrder -> Handler m -> Block -> m ()
 traverseBlock order handler blk@(Block stmts pos) = do
   hBlockEnter handler blk pos
-  inScope $ mapM_ (traverseStmt order handler) stmts
+  inScope $ mapM_ (traverseStmt order handler True) stmts
   hBlockExit handler blk pos
 
-traverseStmt :: TraverseMonad m => TraversalOrder -> Handler m -> Stmt -> m ()
-traverseStmt order handler stmt = case stmt of
+traverseStmt :: TraverseMonad m => TraversalOrder -> Handler m -> ScopeFlag -> Stmt -> m ()
+traverseStmt order handler scopeFlag stmt = case stmt of
   Decl ty name pos -> hDecl handler ty name pos
   
   Init ty name expr pos -> do
@@ -136,20 +138,22 @@ traverseStmt order handler stmt = case stmt of
     withOrder order (hIf handler cond thenStmt mElse pos) $ do
       traverseExpr' cond
       inScope_ $ do
-        withOrder order (hIfThen handler thenStmt) $ traverseStmt' thenStmt
+        withOrder order (hIfThen handler thenStmt) $ traverseStmt order handler True thenStmt
       inScope_ $
         withOrder order (hIfElse handler mElse) $ do
           case mElse of
-            Just elseStmt -> traverseStmt' elseStmt
+            Just elseStmt -> traverseStmt order handler True elseStmt
             Nothing -> pure ()
     
   Break pos -> hBreak handler pos
   
   Continue pos -> hContinue handler pos
   
-  InnerBlock blk pos -> do
-    withOrder order (hInnerBlock handler blk pos) $
-      traverseBlock' blk
+  InnerBlock blk@(Block stmts _) pos -> do
+    withOrder order (hInnerBlock handler blk pos) $ do
+      if scopeFlag
+      then mapM_ (traverseStmt order handler True) stmts
+      else traverseBlock' blk
 
   Call func params pos -> do
     withOrder order (hCall handler func params pos) $
@@ -157,7 +161,7 @@ traverseStmt order handler stmt = case stmt of
   
   where
     traverseBlock' = traverseBlock order handler
-    traverseStmt' = traverseStmt order handler
+    traverseStmt' = traverseStmt order handler False
     traverseExpr' = traverseExpr order handler
     
     

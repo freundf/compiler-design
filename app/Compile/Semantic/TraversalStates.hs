@@ -88,7 +88,7 @@ define :: String -> SourcePos -> VariableState ()
 define name pos = do
   decl <- getDeclaration name
   case decl of
-    Nothing -> semanticFail $ "Use of undeclared '" ++ name ++ "' at " ++ posPretty pos
+    Nothing -> semanticFail $ "Define: Use of undeclared '" ++ name ++ "' at " ++ posPretty pos
     Just _ -> do
       scope <- gets (head . scopes)
       let updated = scope { definitions = Set.insert name (definitions scope) }
@@ -99,10 +99,10 @@ check name pos = do
   decl <- getDeclaration name
   def <- getDefinition name
   case decl of
-    Nothing -> semanticFail $ "Use of undeclared '" ++ name ++ "' at " ++ posPretty pos
+    Nothing -> semanticFail $ "Check: Use of undeclared '" ++ name ++ "' at " ++ posPretty pos
     Just _ -> pure ()
   case def of
-    Nothing -> semanticFail $ "Use of undefined '" ++ name ++ "' at " ++ posPretty pos
+    Nothing -> semanticFail $ "Check: Use of undefined '" ++ name ++ "' at " ++ posPretty pos
     Just _ -> pure ()
 
 getDeclaration :: String -> VariableState (Maybe String)
@@ -167,7 +167,7 @@ data Types = Types
   , recordedTypes :: [Type]
   , returnType :: Type
   , functions :: [Function]
-  }
+  } deriving (Eq, Show)
 
 registerReturnType :: Type -> TypeState ()
 registerReturnType t = modify $ \s -> s { returnType = t }
@@ -183,7 +183,7 @@ getType name pos = do
   ts <- gets (head . types)
   let t = Map.lookup name ts
   case t of
-    Nothing -> semanticFail $ "Use of undeclared '" ++ name ++ "' at " ++ posPretty pos
+    Nothing -> semanticFail $ "getType: Use of undeclared '" ++ name ++ "' at " ++ posPretty pos
     Just t -> pure t
 
 popTypes :: Int -> TypeState [Type]
