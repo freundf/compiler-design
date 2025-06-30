@@ -39,8 +39,8 @@ instance Show GraphState where
     , "currentBlock: " ++ show (currentBlock g)
     , "nextNodeId: " ++ show (nextNodeId g)]
 
-emptyState :: GraphState
-emptyState = GraphState
+emptyState :: String -> GraphState
+emptyState name = GraphState
   { graph = graph
   , currentDef = Map.empty
   , incompletePhis = IntMap.empty
@@ -53,7 +53,7 @@ emptyState = GraphState
   , continueTarget = []
   }
   where
-    graph = newGraph "main"
+    graph = newGraph name
   
 
 type GraphConstructor a = State GraphState a
@@ -97,6 +97,11 @@ newUnOp op e = newNode (UnOpNode op e)
 
 newReturn :: NodeId -> Maybe NodeId -> GraphConstructor Node
 newReturn e se = newNode (Return e se)
+
+newCall :: String -> [NodeId] -> GraphConstructor Node
+newCall target params = do
+  se <- readCurrentSideEffect
+  newNode (CallNode target params (Just se))
 
 newConst :: Value -> GraphConstructor Node
 newConst i = do

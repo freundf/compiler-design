@@ -163,6 +163,7 @@ declInit :: Parser Stmt
 declInit = do
   pos <- getSourcePos
   t <- ty
+  sc
   name <- identifier
   void $ symbol "="
   e <- expr
@@ -174,7 +175,7 @@ ty =  (pure TInt <* (string "int" <* notFollowedBy identLetter))
 
 simp :: Parser Stmt
 simp = do
-  s <- try asgn <|> decl <|> call
+  s <- try asgn <|> try decl <|> call
   return s
 
 call :: Parser Stmt

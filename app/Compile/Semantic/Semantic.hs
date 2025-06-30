@@ -7,13 +7,13 @@ import           Compile.Frontend.Parser (parseNumber)
 import           Error (L1ExceptT, semanticFail)
 import           Compile.Semantic.VariableAnalysis (varStatusAnalysis)
 import           Compile.Semantic.ReturnAnalysis (checkReturns)
-import           Compile.Semantic.TypeAnalysis (typeCheck)
-import           Compile.Semantic.NameAnalysis (resolveNames)
+import           Compile.Semantic.TypeAnalysis (checkTypes)
 import           Compile.Semantic.BreakContinueAnalysis (checkBreakContinue)
 import           Compile.Semantic.ForAnalysis (analyseFor)
 import           Compile.Semantic.IntegerAnalysis (checkIntegers)
 import           Compile.Semantic.FunctionAnalysis (checkFunctions)
 import           Compile.Semantic.Traverse (traverseAST, chainHandlers, TraversalOrder(..))
+import           Compile.Semantic.TraversalStates
 import           Compile.Semantic.Util
 
 import           Control.Monad (unless, when, void)
@@ -27,15 +27,13 @@ import           Text.Megaparsec.Pos (SourcePos)
 
 semanticAnalysis :: AST -> L1ExceptT ()
 semanticAnalysis ast = do
-  let initialCtx = emptyCtx ast
-      checkVarStatus = chainHandlers [resolveNames, varStatusAnalysis, analyseFor]
-      checkTypes = chainHandlers [resolveNames, typeCheck]
-  runStateT (traverseAST PostOrder checkFunctions ast) initialCtx
-  runStateT (traverseAST PostOrder checkVarStatus ast) initialCtx
-  runStateT (traverseAST PostOrder checkTypes ast) initialCtx
-  runStateT (traverseAST PostOrder checkIntegers ast) initialCtx
-  runStateT (traverseAST PostOrder checkBreakContinue ast) initialCtx
-  runStateT (traverseAST PostOrder checkReturns ast) initialCtx
+  let checkVarStatus = chainHandlers [varStatusAnalysis, analyseFor]
+  runStateT (traverseAST PostOrder checkBreakContinue ast) emptyLoopState
+  runStateT (traverseAST PostOrder checkFunctions ast) emptyFunctionState
+  runStateT (traverseAST PostOrder checkIntegers ast) emptyNoState
+  runStateT (traverseAST PostOrder checkReturns ast) emptyNoState
+  runStateT (traverseAST PostOrder checkVarStatus ast) emptyVariableState
+  runStateT (traverseAST PostOrder checkTypes ast) emptyTypeState
   return ()
 
 

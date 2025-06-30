@@ -184,3 +184,43 @@ rdi8  = Reg $ Register RDI Size8
 rdi16 = Reg $ Register RDI Size16
 rdi32 = Reg $ Register RDI Size32
 rdi64 = Reg $ Register RDI Size64
+
+r8_8  = Reg $ Register R8 Size8
+r8_16 = Reg $ Register R8 Size16
+r8_32 = Reg $ Register R8 Size32
+r8_64 = Reg $ Register R8 Size64
+
+r9_8  = Reg $ Register R9 Size8
+r9_16 = Reg $ Register R9 Size16
+r9_32 = Reg $ Register R9 Size32
+r9_64 = Reg $ Register R9 Size64
+
+r10_8  = Reg $ Register R10 Size8
+r10_16 = Reg $ Register R10 Size16
+r10_32 = Reg $ Register R10 Size32
+r10_64 = Reg $ Register R10 Size64
+
+r11_8  = Reg $ Register R11 Size8
+r11_16 = Reg $ Register R11 Size16
+r11_32 = Reg $ Register R11 Size32
+r11_64 = Reg $ Register R11 Size64
+
+r12_8  = Reg $ Register R12 Size8
+r12_16 = Reg $ Register R12 Size16
+r12_32 = Reg $ Register R12 Size32
+r12_64 = Reg $ Register R12 Size64
+
+r13_8  = Reg $ Register R13 Size8
+r13_16 = Reg $ Register R13 Size16
+r13_32 = Reg $ Register R13 Size32
+r13_64 = Reg $ Register R13 Size64
+
+r14_8  = Reg $ Register R14 Size8
+r14_16 = Reg $ Register R14 Size16
+r14_32 = Reg $ Register R14 Size32
+r14_64 = Reg $ Register R14 Size64
+
+r15_8  = Reg $ Register R15 Size8
+r15_16 = Reg $ Register R15 Size16
+r15_32 = Reg $ Register R15 Size32
+r15_64 = Reg $ Register R15 Size64

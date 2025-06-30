@@ -1,19 +1,21 @@
 module Compile.Semantic.TypeAnalysis
-  ( typeCheck
+  ( checkTypes
   ) where
   
 import Compile.Frontend.AST
 import Compile.Semantic.Util
 import Compile.Semantic.Traverse
+import Compile.Semantic.TraversalStates
 
 import Control.Monad (unless)
 import Control.Monad.State.Strict
 import Data.List (find)
 
 
-typeCheck :: Handler Sem
-typeCheck = defaultHandler
-  { hFuncEnter = recordFunctionReturnType
+checkTypes :: Handler TypeState
+checkTypes = defaultHandler
+  { hAST = recordFunctions
+  , hFuncEnter = recordFunctionReturnType
   , hInit = checkInit
   , hAsgn = checkAsgn
   , hRet = checkRet
@@ -30,18 +32,25 @@ typeCheck = defaultHandler
   , hCallExpr = checkCallExpr
   }
 
-recordFunctionReturnType :: Function -> Semantic ()
-recordFunctionReturnType f = modify $ \s -> s { returnType = retType f }
+recordFunctions :: AST -> TypeState ()
+recordFunctions ast = modify $ \s -> s { functions = ast }
 
-checkInit :: Type -> String -> Expr -> SourcePos -> Semantic ()
-checkInit ty _ _ pos = do
+recordFunctionReturnType :: Function -> TypeState ()
+recordFunctionReturnType f = registerReturnType (retType f)
+
+checkDecl :: Type -> String -> SourcePos -> TypeState ()
+checkDecl ty name _ = registerType name ty
+
+checkInit :: Type -> String -> Expr -> SourcePos -> TypeState ()
+checkInit ty name _ pos = do
+  registerType name ty
   [t] <- popTypes 1
   unless (ty == t) $
     semanticFail' $ "Initialization type mismatch at " ++ posPretty pos ++ ": declared " ++ show ty ++ ", got " ++ show t
   
-checkAsgn :: String -> AsgnOp -> Expr -> SourcePos -> Semantic ()
+checkAsgn :: String -> AsgnOp -> Expr -> SourcePos -> TypeState ()
 checkAsgn name op _ pos = do
-  VarInfo ty _ <- lookupVar name pos
+  ty <- getType name pos
   [t] <- popTypes 1
   case op of
     Just bop -> do
@@ -53,43 +62,43 @@ checkAsgn name op _ pos = do
     Nothing -> unless (ty == t) $
       semanticFail' $ "Assignment type mismatch to '" ++ name ++ "' at " ++ posPretty pos ++ ": declared " ++ show ty ++ ", got " ++ show t
 
-checkRet :: Expr -> SourcePos -> Semantic ()
+checkRet :: Expr -> SourcePos -> TypeState ()
 checkRet _ pos = do
   ty <- gets returnType
   [t] <- popTypes 1
   unless (ty == t) $
     semanticFail' $ "Return type mismatch at " ++ posPretty pos ++ ": expected " ++ show ty ++ ", got " ++ show t
 
-checkWhile :: Expr -> Stmt -> SourcePos -> Semantic ()
+checkWhile :: Expr -> Stmt -> SourcePos -> TypeState ()
 checkWhile _ _ pos = do
   [t] <- popTypes 1
   unless (t == TBool) $
     semanticFail' $ "While condition must be boolean at " ++ posPretty pos
   
-checkFor :: Maybe Stmt -> Expr -> Maybe Stmt -> Stmt -> SourcePos -> Semantic ()
+checkFor :: Maybe Stmt -> Expr -> Maybe Stmt -> Stmt -> SourcePos -> TypeState ()
 checkFor _ _ _ _ pos = do
   [t] <- popTypes 1
   unless (t == TBool) $
     semanticFail' $ "For condition must be boolean at " ++ posPretty pos
 
-checkIf :: Expr -> Stmt -> Maybe Stmt -> SourcePos -> Semantic ()
+checkIf :: Expr -> Stmt -> Maybe Stmt -> SourcePos -> TypeState ()
 checkIf _ _ _ pos = do
   [t] <- popTypes 1
   unless (t == TBool) $
     semanticFail' $ "If condition must be boolean at " ++ posPretty pos
 
-checkBoolLit :: Bool -> SourcePos -> Semantic ()
+checkBoolLit :: Bool -> SourcePos -> TypeState ()
 checkBoolLit _ pos = pushType TBool
 
-checkIntExpr :: String -> SourcePos -> Semantic ()
+checkIntExpr :: String -> SourcePos -> TypeState ()
 checkIntExpr _ _ = pushType TInt
 
-checkIdent :: String -> SourcePos -> Semantic ()
+checkIdent :: String -> SourcePos -> TypeState ()
 checkIdent name pos = do
-  VarInfo ty _ <- lookupVar name pos
+  ty <- getType name pos
   pushType ty
 
-checkUnExpr :: UnOp -> Expr -> Semantic ()
+checkUnExpr :: UnOp -> Expr -> TypeState ()
 checkUnExpr op _ = do
   let (tIn, tOut) = unOpType op
   [t] <- popTypes 1
@@ -97,7 +106,7 @@ checkUnExpr op _ = do
     semanticFail' $ "Unary " ++ show op ++ ": expected " ++ show tIn ++ ", got " ++ show t
   pushType tOut
   
-checkBinExpr :: BinOp -> Expr -> Expr -> Semantic ()
+checkBinExpr :: BinOp -> Expr -> Expr -> TypeState ()
 checkBinExpr op _ _ = do
   let (tIn, tOut) = binOpType op
   [t2, t1] <- popTypes 2
@@ -105,7 +114,7 @@ checkBinExpr op _ _ = do
     semanticFail' $ "Binary " ++ show op ++ ": expected " ++ show tIn ++ ", got (" ++ show t1 ++ "," ++ show t2 ++ ")"
   pushType tOut
   
-checkTernary :: Expr -> Expr -> Expr -> Semantic ()
+checkTernary :: Expr -> Expr -> Expr -> TypeState ()
 checkTernary _ _ _ = do
   [t2, t1, c] <- popTypes 3
   unless (c == TBool) $
@@ -115,7 +124,7 @@ checkTernary _ _ _ = do
   pushType t1
 
 
-checkCall :: String -> [Expr] -> SourcePos -> Semantic ()
+checkCall :: String -> [Expr] -> SourcePos -> TypeState ()
 checkCall f p pos = do
   funcs <- gets functions
   let function = find ((f ==) . fName) funcs
@@ -125,7 +134,7 @@ checkCall f p pos = do
     Just func -> do
       unless ((map fst (params func)) == (reverse args)) $ semanticFail' $ "Type mismatch in function arguments for '" ++ show f ++ "', at" ++ show pos
 
-checkCallExpr :: String -> [Expr] -> SourcePos -> Semantic ()
+checkCallExpr :: String -> [Expr] -> SourcePos -> TypeState ()
 checkCallExpr f p pos = do
   funcs <- gets functions
   let function = find ((f ==) . fName) funcs

@@ -116,8 +116,8 @@ getReg :: (Ord a) => a -> Map a a -> a
 getReg reg = Map.findWithDefault reg reg
 
 
-regAlloc :: X86 -> RegAlloc -> X86
-regAlloc (X86 d instr) strategy = (X86 d) $ reserveStack stackUsed (x86Code finalState)
+regAlloc :: [Instr] -> RegAlloc -> [Instr]
+regAlloc instr strategy = reserveStack stackUsed (x86Code finalState)
   where
     finalState = execState (mapM_ processInstr instr) (initialState strategy)
     stackUsed = maximum . map (abs . getOffset . snd) . Map.toList $ strategy

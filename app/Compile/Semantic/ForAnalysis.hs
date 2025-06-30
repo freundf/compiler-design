@@ -3,25 +3,26 @@ module Compile.Semantic.ForAnalysis
   ) where
   
 import Compile.Semantic.Traverse
+import Compile.Semantic.TraversalStates
 import Compile.Semantic.Util
 import Compile.Frontend.AST
 
 import Control.Monad (unless)
 import Control.Monad.State.Strict
-import Debug.Trace (traceM)
+import Data.Maybe (isJust)
 
-analyseFor :: Handler Sem
+analyseFor :: Handler VariableState
 analyseFor = defaultHandler
   { hFor = checkForStep
   }
   
-checkForStep :: Maybe Stmt -> Expr -> Maybe Stmt -> Stmt -> SourcePos -> Semantic ()
+checkForStep :: Maybe Stmt -> Expr -> Maybe Stmt -> Stmt -> SourcePos -> VariableState ()
 checkForStep _ _ mStep _ _ = case mStep of
   Just stepStmt -> case stepStmt of
     Decl _ name pos -> semanticFail' ("Can't declare '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
     Init _ name _ pos -> semanticFail' ("Can't initialize '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
     Asgn name _ _ pos -> do
-      VarInfo _ initialized <- lookupVar name pos
-      unless (initialized) $ semanticFail' ("Can't initialize '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
+      def <- isJust <$> getDefinition name
+      unless (def) $ semanticFail' ("Can't initialize '" ++ name ++ "' in for-loop step at " ++ posPretty pos)
     _ -> pure ()
   Nothing -> pure ()

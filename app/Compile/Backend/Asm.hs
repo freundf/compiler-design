@@ -22,7 +22,6 @@ import Data.List (findIndex)
 import Data.Maybe (fromJust)
 
 import Control.Monad.IO.Class
-import Debug.Trace (traceShow)
 
 type CodeGen a = State CodeGenState a
 
@@ -34,22 +33,34 @@ data CodeGenState = CodeGenState
   , currentBlock :: Int
   , codeBlocks :: IntMap [Instr]
   , phiMoves :: IntMap [Instr]
+  , currentFunction :: String
   }
   
-codeGen :: IRGraph -> X86
-codeGen ir = regAlloc ((X86 defaultDirectives) . (prologue ++) . concatMap flattenBlock $ schedule ir) strategy
+codeGen :: [IRGraph] -> X86
+codeGen functions = X86 dirs allInstrs
+  where
+    dirs = defaultDirectives
+    allInstrs = prologue ++ concatMap genFunction functions
+
+genFunction :: IRGraph -> [Instr]
+genFunction ir = regAlloc ({- genFunctionPrologue ++ -} flattenBlocks (codeBlocks finalState) order) strategy
   where
     order = schedule ir
-    regs = let x = preAlloc ir in traceShow x x
-    initialState = CodeGenState regs order ir (Map.size regs) 0 IntMap.empty IntMap.empty
-    genBlocks = do
-      mapM_ genBlock order
-      mapM_ genTerminator order
-    finalState = execState genBlocks initialState
-    strategy = let maxReg = nextReg finalState - 1
+    regs = preAlloc ir
+    initialState = CodeGenState regs order ir (Map.size regs) 0 IntMap.empty IntMap.empty (irName ir)
+    finalState = execState (genBlocks order) initialState
+    strategy = let maxReg = nextReg finalState -1
                 in naiveStrategy maxReg
-    
-    flattenBlock bb = IntMap.findWithDefault [] (bid bb) (codeBlocks finalState)
+
+genBlocks :: Schedule -> CodeGen ()
+genBlocks blks = do
+  mapM_ genBlock blks
+  mapM_ genTerminator blks
+
+flattenBlocks :: IntMap [Instr] -> Schedule -> [Instr]
+flattenBlocks blks order = concatMap flattenBlock order
+  where
+    flattenBlock bb = IntMap.findWithDefault [] (bid bb) blks
 
 preAlloc :: IRGraph -> Map NodeId Opnd
 preAlloc graph = Map.fromList $ zip ns (map VirtReg [0..])
@@ -61,6 +72,7 @@ preAlloc graph = Map.fromList $ zip ns (map VirtReg [0..])
       Phi {} -> True
       Proj {} -> True
       Cond {} -> True
+      CallNode {} -> True
       _ -> False
       
 freshReg :: CodeGen Opnd
@@ -75,22 +87,28 @@ assignReg nid r = modify $ \s -> s { regMap = Map.insert nid r (regMap s)}
 lookupReg :: NodeId -> CodeGen Opnd
 lookupReg n = do
   m <- gets regMap
-  case Map.lookup n m of
-    Just r -> pure r
-    Nothing -> error $ "Can't find register for " ++ (show n)
+  ir <- gets irGraph
+  case nType (getNode ir n) of
+    ConstNode v -> pure $ Imm (show (intVal v))
+    _ -> case Map.lookup n m of
+          Just r -> pure r
+          Nothing -> error $ "Can't find register for " ++ (show n)
     
 emit :: BlockId -> Instr -> CodeGen()
 emit b instr = modify $ \s -> s { codeBlocks = IntMap.insertWith (flip (++)) b [instr] (codeBlocks s) }
 
-blockLabel :: BlockId -> String
-blockLabel b = if b == 0
-                 then "_main"
-                 else "b" ++ show b
+blockLabel :: String -> BlockId -> String
+blockLabel func b = if b == 0
+                 then funcName
+                 else funcName ++ "_b" ++ show b
+  where
+    funcName = if func == "main" then "_main" else func
 
 genBlock :: BasicBlock -> CodeGen ()
 genBlock bb = do
+  ir <- gets irGraph
   emit (bid bb) Nop
-  let lbl = blockLabel (bid bb)
+  let lbl = blockLabel (irName ir) (bid bb)
   emit (bid bb) (Label lbl)
   modify $ \s -> s { currentBlock = bid bb }
   mapM_ genNode (blockNodes bb)
@@ -176,15 +194,15 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
   Jump -> do
     ir <- gets irGraph
     succs <- gets (successors . irGraph)
-    let target = blockLabel . block . (getNode ir) . head . IntSet.toList $ succs IntMap.! thisId
+    let target = blockLabel (irName ir) . block . (getNode ir) . head . IntSet.toList $ succs IntMap.! thisId
     emit' $ Jmp target
     
   Cond cond -> do
     ir <- gets irGraph
     succs <- gets (successors . irGraph)
     let [trueProj, falseProj] = IntSet.toList $ succs IntMap.! thisId
-        trueTarget = blockLabel . block . (getNode ir) . head . IntSet.toList $ succs IntMap.! trueProj
-        falseTarget = blockLabel . block . (getNode ir) . head . IntSet.toList $ succs IntMap.! falseProj
+        trueTarget = blockLabel (irName ir) . block . (getNode ir) . head . IntSet.toList $ succs IntMap.! trueProj
+        falseTarget = blockLabel (irName ir). block . (getNode ir) . head . IntSet.toList $ succs IntMap.! falseProj
     
     c <- lookupReg cond
     r <- lookupReg thisId
@@ -194,10 +212,11 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
     emit' $ Jmp falseTarget
     
   Return { expr = e } -> do
+    ir <- gets irGraph
     r <- lookupReg e
     emit' $ Mov rax32 r
     endBlk <- gets (endBlock . irGraph)
-    emit' $ Jmp (blockLabel endBlk)
+    emit' $ Jmp (blockLabel (irName ir) endBlk)
     
   Phi { preds = ps, isSE = se } -> do
     if se
@@ -222,6 +241,12 @@ genNode Node { nid = thisId, nType = nt, block = bid } = case nt of
         r2 <- lookupReg e
         emit' $ Mov r1 r2
       _ -> pure ()
+
+  CallNode { target = func, ps = params } -> do
+    r <- lookupReg thisId
+
+    emit' (Call func)
+    emit' (Mov r rax32)
  
   _ -> pure ()
   where

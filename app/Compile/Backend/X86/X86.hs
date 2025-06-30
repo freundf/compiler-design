@@ -3,6 +3,8 @@ module Compile.Backend.X86.X86 where
 import Compile.Backend.X86.Register
 import Compile.Backend.X86.Instruction
 
+import Data.List (intersect)
+
 data X86 = X86
   { directives :: Directives
   , code :: [Instr]
@@ -23,12 +25,18 @@ prologue :: [Instr]
 prologue =
   [ Label "main"
   , Call "_main"
+  , Mov r12_64 rax64
   , Call "flush"
-  , Mov rdi64 rax64
+  , Mov rdi64 r12_64
   , Mov rax64 (Imm "0x3C")
   , Syscall
   ]
 
+functionPrologue :: [Register] -> [Instr]
+functionPrologue used = [ Push rbp64, Mov rbp64 rsp64 ] ++ [ Push (Reg x) | x <- intersect calleeSaved used ]
+
+functionEpilogue :: [Register] -> [Instr]
+functionEpilogue used = [ Pop (Reg x) | x <- intersect calleeSaved used ] ++ [ Pop rbp64, Ret]
 
 registers :: [Opnd]
 registers =
@@ -42,6 +50,27 @@ registers =
   , Reg (Register R15 Size32)
   ]
   ++ [Mem (Register RBP Size32) (-8 * i) | i <- [1..]]
+
+calleeSaved :: [Register]
+calleeSaved =
+  [ Register RBX Size64
+  , Register R12 Size64
+  , Register R13 Size64
+  , Register R14 Size64
+  , Register R15 Size64
+  ]
+
+callerSaved :: [Register]
+callerSaved =
+  [ Register RDI Size64
+  , Register RSI Size64
+  , Register RCX Size64
+  , Register RDX Size64
+  , Register R8 Size64
+  , Register R9 Size64
+  , Register R10 Size64
+  , Register R10 Size64
+  ]
 
 allocStack :: Int -> [Instr]
 allocStack size

@@ -23,6 +23,8 @@ data Handler m = Handler
   , hAsgn     :: String -> AsgnOp -> Expr -> SourcePos -> m ()
   , hRet      :: Expr -> SourcePos -> m ()
   , hIf       :: Expr -> Stmt -> Maybe Stmt -> SourcePos -> m ()
+  , hIfThen   :: Stmt -> m ()
+  , hIfElse   :: Maybe Stmt -> m ()
   , hWhile    :: Expr -> Stmt -> SourcePos -> m ()
   , hFor      :: Maybe Stmt -> Expr -> Maybe Stmt -> Stmt -> SourcePos -> m ()
   , hBreak    :: SourcePos -> m ()
@@ -53,6 +55,8 @@ defaultHandler = Handler
   , hAsgn          = \_ _ _ _ -> return ()
   , hRet           = \_ _ -> return ()
   , hIf            = \_ _ _ _ -> return ()
+  , hIfThen        = \_ -> return ()
+  , hIfElse        = \_ -> return ()
   , hWhile         = \_ _ _ -> return ()
   , hFor           = \_ _ _ _ _ -> return ()
   , hBreak         = \_ -> return ()
@@ -69,28 +73,33 @@ defaultHandler = Handler
   , hCallExpr          = \_ _ _ -> return ()
   }
 
-  
+
+class Monad m => TraverseMonad m where
+   inScope :: m a -> m a
+   inScope_ :: m a -> m a
+   inLoop :: m a -> m a
+
 data TraversalOrder = PreOrder | PostOrder
   deriving (Eq, Show)
 
-traverseAST :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> AST -> Semantic ()
+traverseAST :: TraverseMonad m => TraversalOrder -> Handler m -> AST -> m ()
 traverseAST order handler functions = do
   withOrder order (hAST handler functions) $
     mapM_ (traverseFunction order handler) functions
 
-traverseFunction :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Function -> Semantic ()
+traverseFunction :: TraverseMonad m => TraversalOrder -> Handler m -> Function -> m ()
 traverseFunction order handler f@(Function retTy name params blk pos) = do
   hFuncEnter handler f
   traverseBlock order handler blk
   hFuncExit handler f
 
-traverseBlock :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Block -> Semantic ()
+traverseBlock :: TraverseMonad m => TraversalOrder -> Handler m -> Block -> m ()
 traverseBlock order handler blk@(Block stmts pos) = do
   hBlockEnter handler blk pos
-  inScope Transparent $ mapM_ (traverseStmt order handler) stmts
+  inScope $ mapM_ (traverseStmt order handler) stmts
   hBlockExit handler blk pos
 
-traverseStmt :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Stmt -> Semantic ()
+traverseStmt :: TraverseMonad m => TraversalOrder -> Handler m -> Stmt -> m ()
 traverseStmt order handler stmt = case stmt of
   Decl ty name pos -> hDecl handler ty name pos
   
@@ -112,7 +121,7 @@ traverseStmt order handler stmt = case stmt of
       inLoop $ traverseStmt' body
     
   For mInit cond mStep body pos -> do
-    inScope Transparent $ do
+    inScope $ do
       withOrder order (hFor handler mInit cond mStep body pos) $ do
         case mInit of
           Just initStmt -> traverseStmt' initStmt
@@ -126,10 +135,13 @@ traverseStmt order handler stmt = case stmt of
   If cond thenStmt mElse pos -> do
     withOrder order (hIf handler cond thenStmt mElse pos) $ do
       traverseExpr' cond
-      inScope Transparent $ traverseStmt' thenStmt
-      case mElse of
-        Just elseStmt -> traverseStmt' elseStmt
-        Nothing -> pure ()
+      inScope_ $ do
+        withOrder order (hIfThen handler thenStmt) $ traverseStmt' thenStmt
+      inScope_ $
+        withOrder order (hIfElse handler mElse) $ do
+          case mElse of
+            Just elseStmt -> traverseStmt' elseStmt
+            Nothing -> pure ()
     
   Break pos -> hBreak handler pos
   
@@ -149,7 +161,7 @@ traverseStmt order handler stmt = case stmt of
     traverseExpr' = traverseExpr order handler
     
     
-traverseExpr :: TraversalOrder -> Handler (StateT Context L1ExceptT) -> Expr -> Semantic ()
+traverseExpr :: TraverseMonad m => TraversalOrder -> Handler m -> Expr -> m ()
 traverseExpr order handler expr = case expr of
   BoolLit b pos -> hBoolLit handler b pos
   IntExpr s pos -> hIntExpr handler s pos
@@ -172,7 +184,7 @@ traverseExpr order handler expr = case expr of
   where
     traverseExpr' = traverseExpr order handler
     
-withOrder :: Monad m => TraversalOrder -> m () -> m a -> m a
+withOrder :: TraverseMonad m => TraversalOrder -> m () -> m a -> m a
 withOrder order handlerAction body = do
   when (order == PreOrder) $ handlerAction
   result <- body
@@ -184,15 +196,17 @@ combineHandlers h1 h2 = Handler
   { hAST           = \ast -> hAST h1 ast >> hAST h2 ast
   , hFuncEnter     = \blk -> hFuncEnter h1 blk >> hFuncEnter h2 blk
   , hFuncExit      = \blk -> hFuncExit h1 blk >> hFuncExit h2 blk
-  , hBlockEnter    = \blk -> hBlockEnter h1 blk >> hBlockEnter h2 blk
-  , hBlockExit     = \blk -> hBlockExit h1 blk >> hBlockExit h2 blk
+  , hBlockEnter    = \blk pos -> hBlockEnter h1 blk pos >> hBlockEnter h2 blk pos
+  , hBlockExit     = \blk pos -> hBlockExit h1 blk pos >> hBlockExit h2 blk pos
   , hDecl          = \ty name pos -> hDecl h1 ty name pos >> hDecl h2 ty name pos
   , hInit          = \ty name expr pos -> hInit h1 ty name expr pos >> hInit h2 ty name expr pos
   , hAsgn          = \name op expr pos -> hAsgn h1 name op expr pos >> hAsgn h2 name op expr pos
   , hRet           = \expr pos -> hRet h1 expr pos >> hRet h2 expr pos
-  , hIf            = \cond pos -> hIf h1 cond pos >> hIf h2 cond pos
-  , hWhile         = \cond pos -> hWhile h1 cond pos >> hWhile h2 cond pos
-  , hFor           = \mI cond mS pos -> hFor h1 mI cond mS pos >> hFor h2 mI cond mS pos
+  , hIf            = \cond thenStmt mElse pos -> hIf h1 cond thenStmt mElse pos >> hIf h2 cond thenStmt mElse pos
+  , hIfThen        = \thenStmt -> hIfThen h1 thenStmt >> hIfThen h2 thenStmt
+  , hIfElse        = \mElse -> hIfElse h1 mElse >> hIfElse h2 mElse
+  , hWhile         = \cond body pos -> hWhile h1 cond body pos >> hWhile h2 cond body pos
+  , hFor           = \mI cond mS body pos -> hFor h1 mI cond mS body pos >> hFor h2 mI cond mS body pos
   , hBreak         = \pos -> hBreak h1 pos >> hBreak h2 pos
   , hContinue      = \pos -> hContinue h1 pos >> hContinue h2 pos
   , hIdent         = \name pos -> hIdent h1 name pos >> hIdent h2 name pos
@@ -203,7 +217,7 @@ combineHandlers h1 h2 = Handler
   , hTernary       = \c e1 e2 -> hTernary h1 c e1 e2 >> hTernary h2 c e1 e2
   , hInnerBlock    = \b pos -> hInnerBlock h1 b pos >> hInnerBlock h2 b pos
   , hCall          = \f ps pos -> hCall h1 f ps pos >> hCall h2 f ps pos
-  , hCallExpr          = \f ps pos -> hCallExpr h1 f ps pos >> hCallExpr h2 f ps pos
+  , hCallExpr      = \f ps pos -> hCallExpr h1 f ps pos >> hCallExpr h2 f ps pos
   }
 
 

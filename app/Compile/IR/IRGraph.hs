@@ -50,6 +50,7 @@ data NodeType
   | Proj { expr :: NodeId, projInfo :: ProjInfo }
   | Phi { preds :: [NodeId], isSE :: Bool }
   | Cond { cond :: NodeId }
+  | CallNode { target :: String, ps :: [NodeId], sideEffect :: Maybe NodeId}
   | Jump
   | NopNode
   | Exit
@@ -73,7 +74,7 @@ data UnOp
  
  
 data IRGraph = IRGraph
-  { name :: String
+  { irName :: String
   , successors :: IntMap IntSet
   , startBlock :: NodeId
   , endBlock :: NodeId
@@ -82,7 +83,7 @@ data IRGraph = IRGraph
   
 instance Show IRGraph where
   show g = unlines $
-    [ show (name g)
+    [ show (irName g)
     , ""
     , "Successors:"
     ] ++ (map show (IntMap.toList (successors g))) ++
@@ -101,7 +102,7 @@ intVal val = case val of
   
 newGraph :: String -> IRGraph
 newGraph name = IRGraph
-  { name = name
+  { irName = name
   , successors = IntMap.empty
   , startBlock = nid firstBlock
   , endBlock = nid lastBlock
@@ -123,6 +124,7 @@ predecessors n =
     Proj e _ -> [e]
     Phi ps _ -> ps
     Cond c -> [c]
+    CallNode _ ps _ -> ps
     Jump -> []
     NopNode -> []
     Exit -> []

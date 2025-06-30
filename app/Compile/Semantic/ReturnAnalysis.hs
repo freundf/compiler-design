@@ -5,16 +5,17 @@ module Compile.Semantic.ReturnAnalysis
 import Compile.Semantic.Util
 import Compile.Frontend.AST
 import Compile.Semantic.Traverse
+import Compile.Semantic.TraversalStates
 
 import Control.Monad (unless)
 
 
-checkReturns :: Handler Sem
+checkReturns :: Handler NoState
 checkReturns = defaultHandler
   { hFuncExit = functionReturns
   }
 
-functionReturns :: Function -> Semantic ()
+functionReturns :: Function -> NoState ()
 functionReturns (Function _ _ _ block _) = unless (blockReturns block) $ semanticFail' ("Not all control-flow paths return a value")
 
 blockReturns :: Block -> Bool

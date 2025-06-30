@@ -1,5 +1,7 @@
+{-# LANGUAGE FlexibleInstances #-}
 module Error
   ( L1ExceptT
+  , MonadCompilerFail
   , generalFail
   , parserFail
   , semanticFail
@@ -9,6 +11,7 @@ module Error
 import           Control.Monad.Except (ExceptT, throwError)
 import qualified System.Exit as Exit
 import           System.IO (hPutStrLn, stderr)
+import           Control.Monad.State.Strict (lift, StateT)
 
 -- Predefined exit codes signaling compiler status
 parserErrorCode :: Int
@@ -26,15 +29,21 @@ data L1Error
 
 type L1ExceptT = ExceptT L1Error IO
 
--- Convenienve functions to throw exceptions
-generalFail :: String -> Int -> L1ExceptT a
-generalFail msg code = throwError $ Error msg code
+class Monad m => MonadCompilerFail m where
+  generalFail :: String -> Int -> m a
+  parserFail :: String -> m a
+  semanticFail :: String -> m a
 
-parserFail :: String -> L1ExceptT a
-parserFail = throwError . ParserError
+instance MonadCompilerFail L1ExceptT where
+  -- Convenienve functions to throw exceptions
+  generalFail msg code = throwError $ Error msg code
+  parserFail = throwError . ParserError
+  semanticFail = throwError . SemanticError
 
-semanticFail :: String -> L1ExceptT a
-semanticFail = throwError . SemanticError
+instance MonadCompilerFail m => MonadCompilerFail (StateT s m) where
+  generalFail msg code = lift (generalFail msg code)
+  parserFail = lift . parserFail
+  semanticFail = lift . semanticFail
 
 -- Exit with an error message and a return code
 dieWithError :: L1Error -> IO ()

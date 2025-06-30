@@ -1,27 +1,31 @@
+{-# LANGUAGE FlexibleInstances #-}
 module Compile.Semantic.BreakContinueAnalysis
   ( checkBreakContinue
   ) where
 
 import Compile.Semantic.Traverse
+import Compile.Semantic.TraversalStates
 import Compile.Semantic.Util
 import Compile.Frontend.AST
+import Error
 
 import Control.Monad (when)
 import Control.Monad.State.Strict
 
-checkBreakContinue :: Handler Sem
+
+
+checkBreakContinue :: Handler LoopState
 checkBreakContinue = defaultHandler
   { hBreak = checkBreak
   , hContinue = checkContinue
   }
-  
-  
-checkBreak :: SourcePos -> Semantic ()
-checkBreak pos = do
-  ctx <- get
-  when (loopDepth ctx <= 0) $ semanticFail' ("'break' outside loop at " ++ posPretty pos)
 
-checkContinue :: SourcePos -> Semantic ()
+checkBreak :: SourcePos -> LoopState ()
+checkBreak pos = do
+  depth <- get
+  when (depth <= 0) $ semanticFail' ("'break' outside loop at " ++ posPretty pos)
+
+checkContinue :: SourcePos -> LoopState ()
 checkContinue pos = do
-  ctx <- get
-  when (loopDepth ctx <= 0) $ semanticFail' ("'break' outside loop at " ++ posPretty pos)
+  depth <- get
+  when (depth <= 0) $ semanticFail' ("'break' outside loop at " ++ posPretty pos)

@@ -2,7 +2,7 @@ module Compile.IR.SSA
   ( irTranslate
   ) where
   
-import           Compile.Frontend.AST (Function)
+import           Compile.Frontend.AST (Function(..))
 import qualified Compile.Frontend.AST as AST
 import           Compile.IR.IRGraph
 import           Compile.IR.GraphConstructor
@@ -15,15 +15,12 @@ import Data.Char (isDigit)
 import Data.List (isPrefixOf)
 import Data.Int (Int32)
 
-import Debug.Trace (traceShow)
-import Debug.Trace (traceM)
 
-
-irTranslate :: Function -> IRGraph
-irTranslate function = cleanup $ graph finalState
+irTranslate :: AST.AST -> [IRGraph]
+irTranslate ast = map (\f -> cleanup $ graph (finalState f)) ast
   where
-    finalState = execState (translateFunction function) initialState
-    initialState = emptyState
+    finalState f = execState (translateFunction f) (initialState f)
+    initialState f = emptyState (fName f)
     
 translateFunction :: Function -> GraphConstructor ()
 translateFunction (AST.Function _ _ _ body _) = do
@@ -80,7 +77,6 @@ translateStmt stmt = case stmt of
             node <- nid <$> newBinOp bop lhs rhs Nothing
             writeVar name blk node
       
-    
   AST.Ret expr _ -> do
     blk <- gets currentBlock
     rhs <- translateExpr expr
@@ -195,8 +191,6 @@ translateStmt stmt = case stmt of
     
     sealBlock forBlk
     sealBlock stepBlk
-    state <- get
-    traceM (unlines [show state])
     sealBlock bodyBlk
     sealBlock mergeBlk
     removeBreakTarget
@@ -226,7 +220,11 @@ translateStmt stmt = case stmt of
     sealBlock blk
     afterContinue <- nid <$> newBlock [] "after-continue-block"
     setCurrentBlock afterContinue
-  
+
+  AST.Call func params _ -> do
+    ps <- mapM translateExpr params
+    n <- nid <$> newCall func ps
+    writeCurrentSideEffect n
   
 translateExpr :: AST.Expr -> GraphConstructor NodeId
 translateExpr expr = case expr of
@@ -294,7 +292,12 @@ translateExpr expr = case expr of
     setCurrentBlock mergeBlk
     nid <$> newPhi mergeBlk [tExpr, eExpr] False
     
-  
+  AST.CallExpr func params _ -> do
+    ps <- mapM translateExpr params
+    n <- nid <$> newCall func ps
+    writeCurrentSideEffect n
+    pure n
+
 translateBinOp :: AST.BinOp -> BinOp
 translateBinOp op = case op of
   AST.Mul -> Mul
